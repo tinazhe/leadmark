@@ -1,0 +1,32 @@
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Builds
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+
+# Tooling
+.eslintcache
+.cache/
+.parcel-cache/
+
+# IDEs
+.vscode/
+.idea/
+
