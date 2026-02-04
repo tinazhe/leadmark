@@ -1,36 +1,52 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Phone, Loader2, CheckCircle } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { leadsAPI } from '../services/api';
+
+const CONVERSATION_LABEL_SUGGESTIONS = [
+  'Price enquiry',
+  'Catalog sent',
+  'Delivery pending',
+  'Stock check in progress',
+  'Waiting for payday',
+  'Needs approval',
+  'Awaiting response',
+  'Closed – Lost',
+];
 
 const NewLead = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
     phoneNumber: '',
     status: 'new',
     conversationLabel: '',
   });
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      await leadsAPI.create(formData);
+  const createLeadMutation = useMutation({
+    mutationFn: (payload) => leadsAPI.create(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['leads'] });
       setSuccess(true);
       setTimeout(() => {
         navigate('/leads');
       }, 1500);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create lead');
-    } finally {
-      setLoading(false);
-    }
+    },
+    onError: (err) => {
+      setError(err?.response?.data?.error || 'Failed to create lead');
+    },
+  });
+
+  const loading = createLeadMutation.isPending;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    createLeadMutation.mutate(formData);
   };
 
   if (success) {
@@ -128,15 +144,31 @@ const NewLead = () => {
             maxLength={60}
           />
           <datalist id="conversation-tag-suggestions">
-            <option value="Price enquiry" />
-            <option value="Catalog sent" />
-            <option value="Delivery pending" />
-            <option value="Stock check in progress" />
-            <option value="Waiting for payday" />
-            <option value="Needs approval" />
-            <option value="Awaiting response" />
-            <option value="Closed – Lost" />
+            {CONVERSATION_LABEL_SUGGESTIONS.map((opt) => (
+              <option key={opt} value={opt} />
+            ))}
           </datalist>
+          <div className="flex flex-wrap gap-2 mt-2" aria-label="Conversation tag suggestions">
+            {CONVERSATION_LABEL_SUGGESTIONS.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setFormData({ ...formData, conversationLabel: opt })}
+                className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 border-0 cursor-pointer"
+              >
+                {opt}
+              </button>
+            ))}
+            {formData.conversationLabel && (
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, conversationLabel: '' })}
+                className="px-3 py-1.5 rounded-full text-xs font-medium bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+              >
+                Clear
+              </button>
+            )}
+          </div>
           <p className="text-xs text-gray-500 mt-1">
             Quick label to remember the WhatsApp context.
           </p>

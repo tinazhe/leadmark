@@ -7,8 +7,30 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Handle OPTIONS preflight immediately (vercel.json adds CORS headers; we need 2xx for preflight to succeed).
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// CORS: allow frontend origins (production + dev). FRONTEND_URL from env for flexibility.
+const allowedOrigins = [
+  'https://app.leadmarka.co.zw',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const shouldRedactKey = (key) => {
@@ -57,6 +79,7 @@ const followUpRoutes = require('./routes/followups');
 const noteRoutes = require('./routes/notes');
 const dashboardRoutes = require('./routes/dashboard');
 const cronRoutes = require('./routes/cron');
+const adminRoutes = require('./routes/admin');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -67,10 +90,26 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/followups', followUpRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Fallback error handler (captures thrown errors that reach Express)
+// Note: most routes handle their own errors, but this protects against unexpected throws.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  try {
+    // Lazy load to avoid circular deps / startup overhead without DSN.
+    // eslint-disable-next-line global-require
+    const { captureException } = require('./sentry');
+    captureException(err, req);
+  } catch (_) {
+    // ignore
+  }
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;

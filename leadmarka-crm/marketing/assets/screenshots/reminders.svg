@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="400" height="260">
+  <rect width="400" height="260" rx="8" fill="#f3f4f6"/>
+  <rect x="12" y="12" width="376" height="28" rx="4" fill="#e5e7eb"/>
+  <circle cx="22" cy="26" r="4" fill="#d1d5db"/>
+  <circle cx="38" cy="26" r="4" fill="#d1d5db"/>
+  <circle cx="54" cy="26" r="4" fill="#d1d5db"/>
+  <rect x="12" y="52" width="48" height="48" rx="8" fill="#fef3c7"/>
+  <text x="24" y="82" font-family="system-ui,sans-serif" font-size="18" font-weight="700" fill="#92400e">12</text>
+  <text x="70" y="76" font-family="system-ui,sans-serif" font-size="14" fill="#1f2937">Follow up  Tendai M.</text>
+  <text x="70" y="94" font-family="system-ui,sans-serif" font-size="12" fill="#6b7280">Today, 2:00 PM</text>
+  <rect x="12" y="110" width="376" height="52" rx="4" fill="#fff" stroke="#e5e7eb"/>
+  <rect x="12" y="172" width="48" height="48" rx="8" fill="#dbeafe"/>
+  <text x="24" y="202" font-family="system-ui,sans-serif" font-size="18" font-weight="700" fill="#1e40af">13</text>
+  <text x="70" y="196" font-family="system-ui,sans-serif" font-size="14" fill="#1f2937">Call back  Sarah K.</text>
+  <text x="70" y="214" font-family="system-ui,sans-serif" font-size="12" fill="#6b7280">Tomorrow</text>
+  <text x="24" y="252" font-family="system-ui,sans-serif" font-size="12" fill="#6b7280">Follow-up reminders</text>
+</svg>

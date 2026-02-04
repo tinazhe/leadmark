@@ -28,6 +28,8 @@ router.post('/register', [
       timezone,
       reminderEnabled,
       reminderLeadMinutes,
+      dailySummaryEnabled,
+      dailySummaryTime,
     } = req.body;
 
     // Create user in Supabase Auth
@@ -57,6 +59,14 @@ router.post('/register', [
       profileInsert.reminder_lead_minutes = reminderLeadMinutes;
     }
 
+    if (typeof dailySummaryEnabled === 'boolean') {
+      profileInsert.daily_summary_enabled = dailySummaryEnabled;
+    }
+
+    if (typeof dailySummaryTime === 'string' && dailySummaryTime.trim()) {
+      profileInsert.daily_summary_time = dailySummaryTime.trim();
+    }
+
     const { error: profileError } = await supabase
       .from('profiles')
       .insert([profileInsert]);
@@ -84,6 +94,8 @@ router.post('/register', [
         timezone: timezone || 'Africa/Harare',
         reminderEnabled: typeof reminderEnabled === 'boolean' ? reminderEnabled : true,
         reminderLeadMinutes: Number.isInteger(reminderLeadMinutes) ? reminderLeadMinutes : 5,
+        dailySummaryEnabled: typeof dailySummaryEnabled === 'boolean' ? dailySummaryEnabled : true,
+        dailySummaryTime: typeof dailySummaryTime === 'string' && dailySummaryTime.trim() ? dailySummaryTime.trim() : '08:00',
       },
     });
   } catch (error) {
@@ -143,6 +155,8 @@ router.post('/login', [
         timezone: profile.timezone,
         reminderEnabled: profile.reminder_enabled,
         reminderLeadMinutes: profile.reminder_lead_minutes,
+        dailySummaryEnabled: profile.daily_summary_enabled,
+        dailySummaryTime: profile.daily_summary_time,
       },
     });
   } catch (error) {
@@ -282,6 +296,8 @@ router.get('/me', async (req, res) => {
       timezone: profile.timezone,
       reminderEnabled: profile.reminder_enabled,
       reminderLeadMinutes: profile.reminder_lead_minutes,
+      dailySummaryEnabled: profile.daily_summary_enabled,
+      dailySummaryTime: profile.daily_summary_time,
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -296,6 +312,26 @@ router.put('/profile', [
   body('timezone').optional().trim(),
   body('reminderEnabled').optional().isBoolean(),
   body('reminderLeadMinutes').optional().isInt({ min: 0, max: 1440 }),
+  body('dailySummaryEnabled').optional().isBoolean(),
+  body('dailySummaryTime').optional().custom((value) => {
+    if (typeof value !== 'string') {
+      throw new Error('dailySummaryTime must be a string in HH:MM format');
+    }
+    const trimmed = value.trim();
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) {
+      throw new Error('dailySummaryTime must be in HH:MM format');
+    }
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      throw new Error('dailySummaryTime hour must be between 0 and 23');
+    }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      throw new Error('dailySummaryTime minute must be between 0 and 59');
+    }
+    return true;
+  }),
 ], async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -312,7 +348,15 @@ router.put('/profile', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { fullName, businessName, timezone, reminderEnabled, reminderLeadMinutes } = req.body;
+    const {
+      fullName,
+      businessName,
+      timezone,
+      reminderEnabled,
+      reminderLeadMinutes,
+      dailySummaryEnabled,
+      dailySummaryTime,
+    } = req.body;
 
     const updates = {};
     if (fullName !== undefined) updates.full_name = fullName;
@@ -320,6 +364,8 @@ router.put('/profile', [
     if (timezone !== undefined) updates.timezone = timezone;
     if (reminderEnabled !== undefined) updates.reminder_enabled = reminderEnabled;
     if (reminderLeadMinutes !== undefined) updates.reminder_lead_minutes = reminderLeadMinutes;
+    if (dailySummaryEnabled !== undefined) updates.daily_summary_enabled = dailySummaryEnabled;
+    if (dailySummaryTime !== undefined) updates.daily_summary_time = typeof dailySummaryTime === 'string' ? dailySummaryTime.trim() : dailySummaryTime;
 
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -338,6 +384,8 @@ router.put('/profile', [
       timezone: profile.timezone,
       reminderEnabled: profile.reminder_enabled,
       reminderLeadMinutes: profile.reminder_lead_minutes,
+      dailySummaryEnabled: profile.daily_summary_enabled,
+      dailySummaryTime: profile.daily_summary_time,
     });
   } catch (error) {
     console.error('Update profile error:', error);

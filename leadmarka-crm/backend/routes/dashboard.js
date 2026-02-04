@@ -19,6 +19,16 @@ router.get('/today', authMiddleware, async (req, res) => {
     const userTimeZone = profileError ? DEFAULT_TIMEZONE : resolveTimeZone(profile?.timezone);
     const todayStr = getDateStringInTimeZone(new Date(), userTimeZone);
 
+    // Total leads (used for first-time dashboard empty state)
+    const { count: leadCount, error: leadCountError } = await supabase
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    if (leadCountError) {
+      return res.status(400).json({ error: leadCountError.message });
+    }
+
     // Get follow-ups due today (not completed)
     const { data: todayFollowUps, error: todayError } = await supabase
       .from('follow_ups')
@@ -68,6 +78,7 @@ router.get('/today', authMiddleware, async (req, res) => {
     res.json({
       today: todayFollowUps.map(formatFollowUp),
       overdue: overdueFollowUps.map(formatFollowUp),
+      leadCount: leadCount || 0,
       summary: {
         todayCount: todayFollowUps.length,
         overdueCount: overdueFollowUps.length,

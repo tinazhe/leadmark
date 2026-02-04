@@ -25,6 +25,8 @@ const Settings = () => {
     timezone: user?.timezone || 'Africa/Harare',
     reminderEnabled: user?.reminderEnabled ?? true,
     reminderLeadMinutes: user?.reminderLeadMinutes ?? 5,
+    dailySummaryEnabled: user?.dailySummaryEnabled ?? true,
+    dailySummaryTime: user?.dailySummaryTime || '08:00',
   });
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -37,17 +39,27 @@ const Settings = () => {
     setSuccess(false);
 
     try {
-      await updateUser({
-        fullName: formData.fullName,
-        businessName: formData.businessName,
-        timezone: formData.timezone,
+      const rawTime = formData.dailySummaryTime || '08:00';
+      const [h, m] = rawTime.trim().split(':');
+      const dailySummaryTime = `${String(Number(h) || 0).padStart(2, '0')}:${String(Number(m) || 0).padStart(2, '0')}`;
+
+      const fullName = formData.fullName?.trim();
+      const payload = {
+        businessName: formData.businessName?.trim() ?? '',
+        timezone: formData.timezone || 'Africa/Harare',
         reminderEnabled: formData.reminderEnabled,
         reminderLeadMinutes: formData.reminderLeadMinutes,
-      });
+        dailySummaryEnabled: formData.dailySummaryEnabled,
+        dailySummaryTime,
+      };
+      if (fullName !== undefined && fullName !== '') payload.fullName = fullName;
+
+      await updateUser(payload);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      setError('Failed to update settings');
+      const msg = err?.response?.data?.error || err?.message || 'Failed to update settings';
+      setError(typeof msg === 'string' ? msg : 'Failed to update settings');
     } finally {
       setSaving(false);
     }
@@ -168,10 +180,11 @@ const Settings = () => {
           </label>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="reminder-lead-minutes">
               Lead time (minutes before)
             </label>
             <input
+              id="reminder-lead-minutes"
               type="number"
               min={0}
               max={1440}
@@ -187,10 +200,39 @@ const Settings = () => {
                 });
               }}
               disabled={!formData.reminderEnabled}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+              className="w-full min-h-[48px] px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 text-base touch-manipulation"
             />
             <p className="text-xs text-gray-500 mt-1">
               Example: 10 sends the reminder 10 minutes before the follow-up time.
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-gray-100" />
+
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-gray-700">Send daily summary email</span>
+            <input
+              type="checkbox"
+              checked={formData.dailySummaryEnabled}
+              onChange={(e) => setFormData({ ...formData, dailySummaryEnabled: e.target.checked })}
+              className="h-5 w-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+          </label>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="daily-summary-time">
+              Daily summary time
+            </label>
+            <input
+              id="daily-summary-time"
+              type="time"
+              value={formData.dailySummaryTime}
+              onChange={(e) => setFormData({ ...formData, dailySummaryTime: e.target.value })}
+              disabled={!formData.dailySummaryEnabled}
+              className="w-full min-h-[48px] px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500 text-base touch-manipulation bg-white"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Sent once per day in your selected timezone.
             </p>
           </div>
         </div>

@@ -12,6 +12,8 @@ CREATE TABLE public.profiles (
     timezone TEXT DEFAULT 'Africa/Harare',
     reminder_enabled BOOLEAN DEFAULT TRUE,
     reminder_lead_minutes INTEGER DEFAULT 5,
+    daily_summary_enabled BOOLEAN DEFAULT TRUE,
+    daily_summary_time TEXT DEFAULT '08:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

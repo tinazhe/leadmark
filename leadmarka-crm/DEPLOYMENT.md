@@ -8,6 +8,10 @@ LeadMarka is a mobile-first WhatsApp CRM built with:
 - **Database**: Supabase (PostgreSQL)
 - **Email**: Resend
 
+## Monitoring (minimal)
+
+See [MONITORING.md](MONITORING.md) for a minimal setup (uptime monitoring + error tracking + logs).
+
 ## Prerequisites
 
 1. Node.js 18+ installed
@@ -110,6 +114,9 @@ npm run build
 4. Build Command: `npm run build`
 5. Output Directory: `build`
 6. Add `REACT_APP_API_URL` environment variable
+
+**Marketing site (optional, separate Vercel project):**  
+See [MARKETING_DEPLOYMENT.md](MARKETING_DEPLOYMENT.md) to deploy the static landing site from `leadmarka-crm/marketing` as its own Vercel project (or Netlify / GitHub Pages).
 
 ### Option A2: Vercel (Backend API) + Render (Worker)
 

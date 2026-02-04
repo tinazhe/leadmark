@@ -14,6 +14,143 @@ const DEFAULT_REMINDER_LEAD_MINUTES = 5;
 const CLAIM_TIMEOUT_MINUTES = 15;
 let supportsNotificationClaiming = true;
 
+const EMAIL_BRAND = {
+  orange: '#f97316',
+  orangeHover: '#ea580c',
+  dark: '#1f2937',
+  muted: '#6b7280',
+  bg: '#fafafa',
+  border: '#e5e7eb',
+  whatsapp: '#25d366',
+  font:
+    "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+};
+
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (ch) => {
+    switch (ch) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return ch;
+    }
+  });
+
+const getFrontendBaseUrl = () => {
+  const raw = typeof process.env.FRONTEND_URL === 'string' ? process.env.FRONTEND_URL.trim() : '';
+  return raw ? raw.replace(/\/+$/, '') : '';
+};
+
+const joinUrl = (baseUrl, path) => {
+  const base = typeof baseUrl === 'string' ? baseUrl.trim() : '';
+  if (!base) return '';
+  const cleanBase = base.replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  return `${cleanBase}/${cleanPath}`;
+};
+
+const buildEmailButtonHtml = ({ href, label, backgroundColor, textColor = '#ffffff' }) => {
+  if (!href) return '';
+  const safeHref = escapeHtml(href);
+  const safeLabel = escapeHtml(label);
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse: separate;">
+      <tr>
+        <td bgcolor="${backgroundColor}" style="border-radius: 10px;">
+          <a href="${safeHref}"
+             style="display: inline-block; padding: 14px 22px; font-family: ${EMAIL_BRAND.font};
+                    font-size: 14px; font-weight: 700; color: ${textColor}; text-decoration: none;">
+            ${safeLabel}
+          </a>
+        </td>
+      </tr>
+    </table>
+  `;
+};
+
+const buildEmailLayoutHtml = ({ preheader, title, subtitle, bodyHtml, ctaHtml, footerHtml }) => {
+  const frontendUrl = getFrontendBaseUrl();
+  const logoUrl = joinUrl(frontendUrl, '/icons/icon-192x192.png');
+  const safeTitle = escapeHtml(title);
+  const safeSubtitle = subtitle ? escapeHtml(subtitle) : '';
+  const safePreheader = preheader ? escapeHtml(preheader) : '';
+
+  const headerInner = frontendUrl
+    ? `
+      <a href="${escapeHtml(frontendUrl)}" style="text-decoration: none; display: inline-block;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse: separate;">
+          <tr>
+            <td style="vertical-align: middle; padding-right: 10px;">
+              ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="LeadMarka" width="40" height="40"
+                style="display: block; width: 40px; height: 40px; border-radius: 10px;" />` : ''}
+            </td>
+            <td style="vertical-align: middle;">
+              <span style="font-family: ${EMAIL_BRAND.font}; font-size: 18px; font-weight: 800; color: ${EMAIL_BRAND.dark};">
+                LeadMarka
+              </span>
+            </td>
+          </tr>
+        </table>
+      </a>
+    `
+    : `
+      <span style="font-family: ${EMAIL_BRAND.font}; font-size: 18px; font-weight: 800; color: ${EMAIL_BRAND.dark};">
+        LeadMarka
+      </span>
+    `;
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>${safeTitle}</title>
+  </head>
+  <body style="margin: 0; padding: 0; background: ${EMAIL_BRAND.bg};">
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent; mso-hide: all;">
+      ${safePreheader}
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: ${EMAIL_BRAND.bg};">
+      <tr>
+        <td align="center" style="padding: 24px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+                 style="border-collapse: separate; width: 600px; max-width: 600px; background: #ffffff;
+                        border: 1px solid ${EMAIL_BRAND.border}; border-radius: 16px; overflow: hidden;">
+            <tr>
+              <td style="padding: 18px 24px; border-bottom: 1px solid ${EMAIL_BRAND.border}; background: #ffffff;">
+                ${headerInner}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 22px 24px 24px 24px;">
+                <h1 style="margin: 0 0 8px 0; font-family: ${EMAIL_BRAND.font}; font-size: 22px; line-height: 28px; color: ${EMAIL_BRAND.dark};">
+                  ${safeTitle}
+                </h1>
+                ${safeSubtitle ? `<p style="margin: 0 0 16px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.muted};">
+                  ${safeSubtitle}
+                </p>` : ''}
+                ${bodyHtml || ''}
+                ${ctaHtml || ''}
+                ${footerHtml || ''}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+};
+
 const addDaysToDateString = (dateString, days) => {
   const base = new Date(`${dateString}T00:00:00Z`);
   base.setUTCDate(base.getUTCDate() + days);
@@ -47,20 +184,58 @@ const fetchProfilesByIds = async (userIds) => {
   // Some deployments might not have the newer reminder_* columns yet.
   const attempt = async (columns) => supabase.from('profiles').select(columns).in('id', userIds);
 
-  const { data: extended, error: extendedErr } = await attempt('id, timezone, reminder_enabled, reminder_lead_minutes');
+  const { data: extended, error: extendedErr } = await attempt(
+    'id, timezone, reminder_enabled, reminder_lead_minutes, daily_summary_enabled, daily_summary_time'
+  );
   if (!extendedErr) return { profiles: extended || [], error: null };
 
   const message = extendedErr?.message || '';
-  const missingColumn =
+  const missingDailySummaryColumn =
+    message.includes('daily_summary_enabled') ||
+    message.includes('daily_summary_time') ||
+    message.includes('does not exist');
+
+  if (missingDailySummaryColumn) {
+    const { data: reminderOnly, error: reminderOnlyErr } = await attempt('id, timezone, reminder_enabled, reminder_lead_minutes');
+    if (!reminderOnlyErr) return { profiles: reminderOnly || [], error: null };
+  }
+
+  const missingReminderColumn =
     message.includes('reminder_enabled') ||
     message.includes('reminder_lead_minutes') ||
     message.includes('does not exist');
 
-  if (!missingColumn) return { profiles: [], error: extendedErr };
+  if (!missingReminderColumn && !missingDailySummaryColumn) return { profiles: [], error: extendedErr };
 
   const { data: basic, error: basicErr } = await attempt('id, timezone');
   if (basicErr) return { profiles: [], error: basicErr };
   return { profiles: basic || [], error: null };
+};
+
+const normalizeDailySummaryTime = (value) => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return '08:00';
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return '08:00';
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) return '08:00';
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const isWithinDailySummaryWindow = (localTime, summaryTime, windowMinutes = 5) => {
+  const localMinutes = timeToMinutes(localTime);
+  const summaryMinutes = timeToMinutes(normalizeDailySummaryTime(summaryTime));
+  if (!Number.isFinite(localMinutes) || !Number.isFinite(summaryMinutes)) return false;
+
+  const endMinutes = summaryMinutes + windowMinutes;
+  if (endMinutes < 1440) {
+    return localMinutes >= summaryMinutes && localMinutes <= endMinutes;
+  }
+
+  // Window wraps past midnight.
+  const wrapEnd = endMinutes % 1440;
+  return localMinutes >= summaryMinutes || localMinutes <= wrapEnd;
 };
 
 const isMissingColumnError = (error, columnName) => {
@@ -133,35 +308,106 @@ const sendReminderEmail = async (userEmail, followUp, lead) => {
   try {
     const formattedDate = formatDateLabel(followUp.follow_up_date);
     const formattedTime = followUp.follow_up_time;
-    
+
+    const leadName = escapeHtml(lead?.name || 'Lead');
+    const phoneNumber = escapeHtml(lead?.phone_number || '');
+    const note = followUp?.note ? escapeHtml(followUp.note) : '';
+    const phoneDigits = String(lead?.phone_number || '').replace(/\D/g, '');
+    const whatsappUrl = phoneDigits ? `https://wa.me/${phoneDigits}` : '';
+    const frontendUrl = getFrontendBaseUrl();
+
+    const detailsCardHtml = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; margin-top: 12px;">
+        <tr>
+          <td style="border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid ${EMAIL_BRAND.orange};
+                     border-radius: 12px; padding: 16px; background: #ffffff;">
+            <div style="font-family: ${EMAIL_BRAND.font}; font-size: 18px; line-height: 24px; font-weight: 800; color: ${EMAIL_BRAND.dark}; margin: 0 0 10px 0;">
+              ${leadName}
+            </div>
+            <div style="font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+              <div style="margin: 8px 0 0 0;">
+                <span style="color: ${EMAIL_BRAND.muted};">Phone</span><br />
+                <span style="font-weight: 700;">${phoneNumber || '-'}</span>
+              </div>
+              <div style="margin: 8px 0 0 0;">
+                <span style="color: ${EMAIL_BRAND.muted};">Date</span><br />
+                <span style="font-weight: 700;">${escapeHtml(formattedDate)}</span>
+              </div>
+              <div style="margin: 8px 0 0 0;">
+                <span style="color: ${EMAIL_BRAND.muted};">Time</span><br />
+                <span style="font-weight: 700;">${escapeHtml(formattedTime)}</span>
+              </div>
+              ${note ? `
+                <div style="margin: 8px 0 0 0;">
+                  <span style="color: ${EMAIL_BRAND.muted};">Note</span><br />
+                  <span style="font-weight: 600;">${note}</span>
+                </div>
+              ` : ''}
+            </div>
+          </td>
+        </tr>
+      </table>
+    `;
+
+    const ctaHtml = `
+      <div style="margin-top: 18px;">
+        ${whatsappUrl
+          ? buildEmailButtonHtml({
+              href: whatsappUrl,
+              label: 'Chat on WhatsApp',
+              backgroundColor: EMAIL_BRAND.whatsapp,
+            })
+          : buildEmailButtonHtml({
+              href: frontendUrl,
+              label: 'Open LeadMarka',
+              backgroundColor: EMAIL_BRAND.orange,
+            })}
+      </div>
+    `;
+
+    const footerHtml = `
+      <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid ${EMAIL_BRAND.border};">
+        <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          ${frontendUrl ? `Open <a href="${escapeHtml(frontendUrl)}" style="color: ${EMAIL_BRAND.orange}; text-decoration: none; font-weight: 700;">LeadMarka</a> to view all your follow-ups.` : 'Open LeadMarka to view all your follow-ups.'}
+        </p>
+        <p style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          LeadMarka – WhatsApp CRM
+        </p>
+      </div>
+    `;
+
+    const html = buildEmailLayoutHtml({
+      preheader: `Follow-up with ${lead?.name || 'your lead'} at ${formattedTime}`,
+      title: 'Follow-up reminder',
+      subtitle: 'You have a follow-up scheduled.',
+      bodyHtml: detailsCardHtml,
+      ctaHtml,
+      footerHtml,
+    });
+
+    const text = [
+      'LeadMarka Follow-up reminder',
+      '',
+      'You have a follow-up scheduled:',
+      '',
+      `Name: ${lead?.name || '-'}`,
+      `Phone: ${lead?.phone_number || '-'}`,
+      `Date: ${formattedDate}`,
+      `Time: ${formattedTime}`,
+      followUp?.note ? `Note: ${followUp.note}` : null,
+      '',
+      whatsappUrl ? `Chat on WhatsApp: ${whatsappUrl}` : null,
+      frontendUrl ? `Open LeadMarka: ${frontendUrl}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     await resend.emails.send({
       from: process.env.FROM_EMAIL,
       to: userEmail,
       subject: `Reminder: Follow-up with ${lead.name}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">LeadMarka Follow-up Reminder</h2>
-          <p>You have a follow-up scheduled:</p>
-          
-          <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
-            <h3 style="margin: 0 0 8px 0;">${lead.name}</h3>
-            <p style="margin: 4px 0;"><strong>Phone:</strong> ${lead.phone_number}</p>
-            <p style="margin: 4px 0;"><strong>Date:</strong> ${formattedDate}</p>
-            <p style="margin: 4px 0;"><strong>Time:</strong> ${formattedTime}</p>
-            ${followUp.note ? `<p style="margin: 4px 0;"><strong>Note:</strong> ${followUp.note}</p>` : ''}
-          </div>
-          
-          <a href="https://wa.me/${lead.phone_number.replace(/\D/g, '')}" 
-             style="display: inline-block; background: #25d366; color: white; padding: 12px 24px; 
-                    text-decoration: none; border-radius: 6px; font-weight: bold;">
-            Chat on WhatsApp
-          </a>
-          
-          <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
-            Open LeadMarka to view all your follow-ups.
-          </p>
-        </div>
-      `,
+      html,
+      text,
     });
     
     console.log(`Reminder email sent to ${userEmail} for lead ${lead.name}`);
@@ -310,18 +556,16 @@ const sendDailySummary = async () => {
     for (const userId of userIds) {
       const userProfile = profileById.get(userId);
       if (!userProfile) continue;
-      if (userProfile?.reminder_enabled === false) continue;
+      if (userProfile?.daily_summary_enabled === false) continue;
 
       const userEmail = await getUserEmail(userId, emailCache);
       if (!userEmail) continue;
 
       const userTimeZone = resolveTimeZone(userProfile?.timezone || DEFAULT_TIMEZONE);
       const { date: today, time: localTime } = getZonedDateTimeStrings(now, userTimeZone);
-      const [localHourStr, localMinuteStr] = localTime.split(':');
-      const localHour = Number(localHourStr);
-      const localMinute = Number(localMinuteStr);
+      const summaryTime = normalizeDailySummaryTime(userProfile?.daily_summary_time);
 
-      if (localHour !== 8 || localMinute > 5) {
+      if (!isWithinDailySummaryWindow(localTime, summaryTime, 5)) {
         continue;
       }
 
@@ -346,45 +590,124 @@ const sendDailySummary = async () => {
       const overdue = followUps.filter(fu => fu.follow_up_date < today);
       const todayFollowUps = followUps.filter(fu => fu.follow_up_date === today);
 
+      const frontendUrl = getFrontendBaseUrl();
+      const openAppButtonHtml = `
+        <div style="margin-top: 18px;">
+          ${buildEmailButtonHtml({
+            href: frontendUrl,
+            label: 'Open LeadMarka',
+            backgroundColor: EMAIL_BRAND.orange,
+          })}
+        </div>
+      `;
+
+      const overdueHtml =
+        overdue.length > 0
+          ? `
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; margin-top: 14px;">
+              <tr>
+                <td style="background: #fef3c7; border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid #f59e0b;
+                           border-radius: 12px; padding: 14px;">
+                  <div style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: #92400e;">
+                    ${escapeHtml(`${overdue.length} Overdue`)}
+                  </div>
+                  ${overdue
+                    .map((fu) => {
+                      const name = escapeHtml(fu?.lead?.name || 'Lead');
+                      const date = escapeHtml(fu?.follow_up_date || '');
+                      return `
+                        <div style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
+                          <span style="font-weight: 700;">${name}</span>
+                          <span style="color: ${EMAIL_BRAND.muted};"> · Due ${date}</span>
+                        </div>
+                      `;
+                    })
+                    .join('')}
+                </td>
+              </tr>
+            </table>
+          `
+          : '';
+
+      const todayHtml =
+        todayFollowUps.length > 0
+          ? `
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; margin-top: 14px;">
+              <tr>
+                <td style="background: #f9fafb; border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid ${EMAIL_BRAND.orange};
+                           border-radius: 12px; padding: 14px;">
+                  <div style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: ${EMAIL_BRAND.dark};">
+                    ${escapeHtml(`${todayFollowUps.length} Today`)}
+                  </div>
+                  ${todayFollowUps
+                    .map((fu) => {
+                      const name = escapeHtml(fu?.lead?.name || 'Lead');
+                      const time = escapeHtml(fu?.follow_up_time || '');
+                      return `
+                        <div style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
+                          <span style="font-weight: 700;">${name}</span>
+                          <span style="color: ${EMAIL_BRAND.muted};"> · ${time}</span>
+                        </div>
+                      `;
+                    })
+                    .join('')}
+                </td>
+              </tr>
+            </table>
+          `
+          : '';
+
+      const summaryBodyHtml = `
+        <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+          You have <strong>${escapeHtml(followUps.length)}</strong> follow-ups requiring your attention today.
+        </p>
+        ${overdueHtml}
+        ${todayHtml}
+      `;
+
+      const footerHtml = `
+        <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid ${EMAIL_BRAND.border};">
+          <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+            ${frontendUrl ? `Open <a href="${escapeHtml(frontendUrl)}" style="color: ${EMAIL_BRAND.orange}; text-decoration: none; font-weight: 700;">LeadMarka</a> to view all your follow-ups.` : 'Open LeadMarka to view all your follow-ups.'}
+          </p>
+          <p style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+            LeadMarka – WhatsApp CRM
+          </p>
+        </div>
+      `;
+
+      const summaryHtml = buildEmailLayoutHtml({
+        preheader: `You have ${followUps.length} follow-ups pending today`,
+        title: 'Good morning!',
+        subtitle: 'Here’s what needs your attention today.',
+        bodyHtml: summaryBodyHtml,
+        ctaHtml: openAppButtonHtml,
+        footerHtml,
+      });
+
+      const summaryText = [
+        `LeadMarka Daily Summary (${today})`,
+        '',
+        `You have ${followUps.length} follow-ups pending.`,
+        overdue.length ? '' : null,
+        overdue.length ? `${overdue.length} overdue:` : null,
+        ...overdue.map((fu) => `- ${fu?.lead?.name || 'Lead'} (due ${fu?.follow_up_date || ''})`),
+        todayFollowUps.length ? '' : null,
+        todayFollowUps.length ? `${todayFollowUps.length} today:` : null,
+        ...todayFollowUps.map((fu) => `- ${fu?.lead?.name || 'Lead'} (${fu?.follow_up_time || ''})`),
+        '',
+        frontendUrl ? `Open LeadMarka: ${frontendUrl}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
       // Send summary email
       await resend.emails.send({
         from: process.env.FROM_EMAIL,
         to: userEmail,
         subject: `Your LeadMarka Daily Summary - ${followUps.length} follow-ups pending`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">Good Morning!</h2>
-            <p>You have <strong>${followUps.length}</strong> follow-ups requiring your attention today:</p>
-            
-            ${overdue.length > 0 ? `
-              <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; margin: 16px 0;">
-                <h4 style="margin: 0 0 8px 0; color: #92400e;">⚠️ ${overdue.length} Overdue</h4>
-                ${overdue.map(fu => `
-                  <p style="margin: 4px 0; font-size: 14px;">
-                    <strong>${fu.lead.name}</strong> - Due ${fu.follow_up_date}
-                  </p>
-                `).join('')}
-              </div>
-            ` : ''}
-            
-            ${todayFollowUps.length > 0 ? `
-              <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 12px; margin: 16px 0;">
-                <h4 style="margin: 0 0 8px 0; color: #1e40af;">📅 ${todayFollowUps.length} Today</h4>
-                ${todayFollowUps.map(fu => `
-                  <p style="margin: 4px 0; font-size: 14px;">
-                    <strong>${fu.lead.name}</strong> - ${fu.follow_up_time}
-                  </p>
-                `).join('')}
-              </div>
-            ` : ''}
-            
-            <a href="${process.env.FRONTEND_URL}" 
-               style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; 
-                      text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 16px;">
-              Open LeadMarka
-            </a>
-          </div>
-        `,
+        html: summaryHtml,
+        text: summaryText,
       });
 
       lastSummarySentByUser.set(userId, today);

@@ -1,47 +1,75 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, CheckCircle, AlertCircle, Clock, ChevronRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardAPI, followUpsAPI } from '../services/api';
 
 const TodayDashboard = () => {
-  const [followUps, setFollowUps] = useState({ today: [], overdue: [] });
-  const [stats, setStats] = useState({ todayCount: 0, overdueCount: 0, totalActionRequired: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  const loadDashboard = async () => {
-    try {
-      setLoading(true);
+  const {
+    data,
+    isLoading: loading,
+    isError,
+  } = useQuery({
+    queryKey: ['dashboard', 'today'],
+    queryFn: async () => {
       const { data } = await dashboardAPI.getToday();
-      setFollowUps({
-        today: data.today || [],
-        overdue: data.overdue || [],
-      });
-      setStats(data.summary || { todayCount: 0, overdueCount: 0, totalActionRequired: 0 });
-    } catch (err) {
-      setError('Failed to load dashboard');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+      return data;
+    },
+  });
+
+  const followUps = {
+    today: data?.today || [],
+    overdue: data?.overdue || [],
   };
+
+  const stats = data?.summary || { todayCount: 0, overdueCount: 0, totalActionRequired: 0 };
+  const leadCount = Number.isFinite(data?.leadCount) ? data.leadCount : 0;
+
+  const error = isError ? 'Failed to load dashboard' : null;
+
+  const completeMutation = useMutation({
+    mutationFn: (followUpId) => followUpsAPI.complete(followUpId),
+    onMutate: async (followUpId) => {
+      await queryClient.cancelQueries({ queryKey: ['dashboard', 'today'] });
+      const previous = queryClient.getQueryData(['dashboard', 'today']);
+
+      queryClient.setQueryData(['dashboard', 'today'], (old) => {
+        if (!old) return old;
+
+        const inOverdue = Array.isArray(old.overdue) && old.overdue.some((fu) => fu.id === followUpId);
+        const inToday = Array.isArray(old.today) && old.today.some((fu) => fu.id === followUpId);
+
+        const nextOverdue = Array.isArray(old.overdue) ? old.overdue.filter((fu) => fu.id !== followUpId) : old.overdue;
+        const nextToday = Array.isArray(old.today) ? old.today.filter((fu) => fu.id !== followUpId) : old.today;
+
+        const prevSummary = old.summary || { todayCount: 0, overdueCount: 0, totalActionRequired: 0 };
+        const nextSummary = {
+          ...prevSummary,
+          totalActionRequired: Math.max(0, (prevSummary.totalActionRequired || 0) - 1),
+          overdueCount: inOverdue ? Math.max(0, (prevSummary.overdueCount || 0) - 1) : prevSummary.overdueCount,
+          todayCount: inToday ? Math.max(0, (prevSummary.todayCount || 0) - 1) : prevSummary.todayCount,
+        };
+
+        return { ...old, overdue: nextOverdue, today: nextToday, summary: nextSummary };
+      });
+
+      return { previous };
+    },
+    onError: (_err, _followUpId, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(['dashboard', 'today'], ctx.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'today'] });
+    },
+  });
 
   const handleComplete = async (followUpId) => {
     try {
-      await followUpsAPI.complete(followUpId);
-      // Remove from list
-      setFollowUps(prev => ({
-        today: prev.today.filter(fu => fu.id !== followUpId),
-        overdue: prev.overdue.filter(fu => fu.id !== followUpId),
-      }));
-      setStats(prev => ({
-        ...prev,
-        totalActionRequired: prev.totalActionRequired - 1,
-      }));
+      await completeMutation.mutateAsync(followUpId);
     } catch (err) {
       console.error('Failed to complete follow-up:', err);
     }
@@ -60,6 +88,7 @@ const TodayDashboard = () => {
   }
 
   const hasFollowUps = followUps.today.length > 0 || followUps.overdue.length > 0;
+  const hasLeads = leadCount > 0;
 
   return (
     <div className="p-4 space-y-4">
@@ -97,16 +126,18 @@ const TodayDashboard = () => {
             <CheckCircle className="w-8 h-8 text-gray-400" />
           </div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            All caught up!
+            {hasLeads ? 'All caught up!' : 'Add your first lead to get started'}
           </h3>
           <p className="text-gray-600 mb-4">
-            No follow-ups due today. Time to find new leads?
+            {hasLeads
+              ? 'No follow-ups due today. Time to find new leads?'
+              : 'Create your first lead so you can track statuses and set follow-up reminders.'}
           </p>
           <Link
             to="/leads/new"
             className="inline-flex items-center gap-2 bg-primary-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors"
           >
-            Add New Lead
+            {hasLeads ? 'Add New Lead' : 'Add Lead'}
           </Link>
         </div>
       )}

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, MessageCircle, ChevronRight, Filter, X, Check, Clock, Tag } from 'lucide-react';
 import { formatDistanceToNow, isToday, parseISO } from 'date-fns';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leadsAPI } from '../services/api';
 
 const STATUS_OPTIONS = [
@@ -13,52 +14,69 @@ const STATUS_OPTIONS = [
 ];
 
 const Leads = () => {
-  const [leads, setLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  const loadLeads = useCallback(async () => {
-    try {
-      setLoading(true);
+  const queryClient = useQueryClient();
+
+  const {
+    data: leads = [],
+    isLoading: loading,
+    isError,
+  } = useQuery({
+    queryKey: ['leads', searchQuery, statusFilter],
+    queryFn: async () => {
       const params = {};
       if (searchQuery) params.search = searchQuery;
       if (statusFilter) params.status = statusFilter;
-      
       const { data } = await leadsAPI.getAll(params);
-      setLeads(data || []);
-    } catch (err) {
-      setError('Failed to load leads');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchQuery, statusFilter]);
+      return data || [];
+    },
+    placeholderData: keepPreviousData,
+  });
 
-  useEffect(() => {
-    loadLeads();
-  }, [loadLeads]);
+  const error = isError ? 'Failed to load leads' : null;
 
-  const handleStatusChange = async (leadId, newStatus) => {
-    try {
-      await leadsAPI.update(leadId, { status: newStatus });
-      setLeads(prev => prev.map(lead => 
-        lead.id === leadId ? { ...lead, status: newStatus } : lead
-      ));
-    } catch (err) {
-      console.error('Failed to update status:', err);
-    }
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ leadId, status }) => leadsAPI.update(leadId, { status }),
+    onSuccess: (_res, { leadId, status }) => {
+      // Optimistic-ish update so UI doesn't wait for refetch.
+      queryClient.setQueriesData({ queryKey: ['leads'] }, (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((lead) => (lead.id === leadId ? { ...lead, status } : lead));
+      });
+      queryClient.setQueryData(['lead', leadId], (old) => (old ? { ...old, status } : old));
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+    },
+  });
+
+  const markContactedMutation = useMutation({
+    mutationFn: async ({ leadId }) => {
+      const { data } = await leadsAPI.markWhatsappContactNow(leadId);
+      return { leadId, lastWhatsappContactAt: data?.lastWhatsappContactAt || new Date().toISOString() };
+    },
+    onSuccess: ({ leadId, lastWhatsappContactAt }) => {
+      queryClient.setQueriesData({ queryKey: ['leads'] }, (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((lead) =>
+          lead.id === leadId ? { ...lead, lastWhatsappContactAt } : lead
+        );
+      });
+      queryClient.setQueryData(['lead', leadId], (old) => (old ? { ...old, lastWhatsappContactAt } : old));
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+    },
+  });
+
+  const handleStatusChange = (leadId, newStatus) => {
+    updateStatusMutation.mutate({ leadId, status: newStatus });
   };
 
   const handleMarkContactedToday = async (leadId) => {
-    const { data } = await leadsAPI.markWhatsappContactNow(leadId);
-    const nextTimestamp = data?.lastWhatsappContactAt || new Date().toISOString();
-    setLeads(prev => prev.map(lead =>
-      lead.id === leadId ? { ...lead, lastWhatsappContactAt: nextTimestamp } : lead
-    ));
-    return nextTimestamp;
+    const res = await markContactedMutation.mutateAsync({ leadId });
+    return res?.lastWhatsappContactAt;
   };
 
   const clearFilters = () => {

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="400" height="260">
+  <rect width="400" height="260" rx="8" fill="#f3f4f6"/>
+  <rect x="12" y="12" width="376" height="28" rx="4" fill="#e5e7eb"/>
+  <circle cx="22" cy="26" r="4" fill="#d1d5db"/>
+  <circle cx="38" cy="26" r="4" fill="#d1d5db"/>
+  <circle cx="54" cy="26" r="4" fill="#d1d5db"/>
+  <rect x="12" y="52" width="376" height="40" rx="4" fill="#fff" stroke="#e5e7eb"/>
+  <rect x="12" y="100" width="376" height="40" rx="4" fill="#fff" stroke="#e5e7eb"/>
+  <rect x="12" y="148" width="376" height="40" rx="4" fill="#fff" stroke="#e5e7eb"/>
+  <rect x="12" y="196" width="200" height="24" rx="4" fill="#f97316" opacity="0.2"/>
+  <text x="24" y="56" font-family="system-ui,sans-serif" font-size="14" fill="#1f2937">Tendai M.  New</text>
+  <text x="24" y="104" font-family="system-ui,sans-serif" font-size="14" fill="#1f2937">Sarah K.  Contacted</text>
+  <text x="24" y="152" font-family="system-ui,sans-serif" font-size="14" fill="#1f2937">James T.  Qualified</text>
+  <text x="24" y="214" font-family="system-ui,sans-serif" font-size="12" fill="#6b7280">Track leads</text>
+</svg>

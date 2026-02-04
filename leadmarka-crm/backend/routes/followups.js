@@ -163,8 +163,7 @@ router.post('/', authMiddleware, [
         note: note || null,
         completed: false,
         notified: false,
-        notification_claimed_at: null,
-        notified_at: null,
+        // notification_claimed_at / notified_at omitted so create works before migration 2026-02-04_follow-ups-notification-columns.sql
       }])
       .select()
       .single();

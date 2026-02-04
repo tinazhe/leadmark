@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MessageCircle, Calendar, Plus, Trash2, Edit2, Check, X, Clock, Tag } from 'lucide-react';
 import { format, parseISO, formatDistanceToNow, isToday } from 'date-fns';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leadsAPI, notesAPI, followUpsAPI } from '../services/api';
 
 const STATUS_OPTIONS = [
@@ -26,12 +27,11 @@ const CONVERSATION_LABEL_SUGGESTIONS = [
 const LeadDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [lead, setLead] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('notes');
 
   const [conversationLabelDraft, setConversationLabelDraft] = useState('');
+  const [isConversationLabelDirty, setIsConversationLabelDirty] = useState(false);
   const [savingConversationLabel, setSavingConversationLabel] = useState(false);
   const [markingContacted, setMarkingContacted] = useState(false);
   const [whatsAppContextError, setWhatsAppContextError] = useState('');
@@ -48,42 +48,70 @@ const LeadDetail = () => {
     time: '',
     note: '',
   });
+  const [followUpError, setFollowUpError] = useState('');
 
-  const loadLead = useCallback(async () => {
-    try {
-      setLoading(true);
+  const {
+    data: lead,
+    isLoading: loading,
+    isError,
+  } = useQuery({
+    queryKey: ['lead', id],
+    queryFn: async () => {
       const { data } = await leadsAPI.getById(id);
-      setLead(data);
-      setConversationLabelDraft(data?.conversationLabel || '');
-    } catch (err) {
-      setError('Failed to load lead');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  const error = isError ? 'Failed to load lead' : null;
+
+  useEffect(() => {
+    // When switching leads, reset draft state.
+    setIsConversationLabelDirty(false);
   }, [id]);
 
   useEffect(() => {
-    loadLead();
-  }, [loadLead]);
+    if (isConversationLabelDirty) return;
+    setConversationLabelDraft(lead?.conversationLabel || '');
+  }, [lead?.conversationLabel, isConversationLabelDirty]);
+
+  const updateStatusMutation = useMutation({
+    mutationFn: (status) => leadsAPI.update(id, { status }),
+    onSuccess: (_res, status) => {
+      queryClient.setQueryData(['lead', id], (old) => (old ? { ...old, status } : old));
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
 
   const handleStatusChange = async (newStatus) => {
     try {
-      await leadsAPI.update(id, { status: newStatus });
-      setLead({ ...lead, status: newStatus });
+      await updateStatusMutation.mutateAsync(newStatus);
     } catch (err) {
       console.error('Failed to update status:', err);
     }
   };
+
+  const saveConversationLabelMutation = useMutation({
+    mutationFn: (labelToSave) => leadsAPI.update(id, { conversationLabel: labelToSave }),
+    onSuccess: (_res, labelToSave) => {
+      const trimmed = labelToSave.trim();
+      queryClient.setQueryData(['lead', id], (old) =>
+        old ? { ...old, conversationLabel: trimmed || null } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      setIsConversationLabelDirty(false);
+      setConversationLabelDraft(labelToSave);
+    },
+  });
 
   const handleSaveConversationLabel = async (nextLabel) => {
     const labelToSave = typeof nextLabel === 'string' ? nextLabel : conversationLabelDraft;
     try {
       setWhatsAppContextError('');
       setSavingConversationLabel(true);
-      await leadsAPI.update(id, { conversationLabel: labelToSave });
-      setLead((prev) => (prev ? { ...prev, conversationLabel: labelToSave.trim() || null } : prev));
-      setConversationLabelDraft(labelToSave);
+      await saveConversationLabelMutation.mutateAsync(labelToSave);
     } catch (err) {
       console.error('Failed to update conversation label:', err);
       const raw = err?.response?.data?.error || err?.message || 'Failed to update conversation tag';
@@ -102,12 +130,25 @@ const LeadDetail = () => {
     }
   };
 
+  const markContactedMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await leadsAPI.markWhatsappContactNow(id);
+      return data?.lastWhatsappContactAt || new Date().toISOString();
+    },
+    onSuccess: (lastWhatsappContactAt) => {
+      queryClient.setQueryData(['lead', id], (old) =>
+        old ? { ...old, lastWhatsappContactAt } : old
+      );
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+
   const handleMarkContactedToday = async () => {
     try {
       setWhatsAppContextError('');
       setMarkingContacted(true);
-      const { data } = await leadsAPI.markWhatsappContactNow(id);
-      setLead((prev) => (prev ? { ...prev, lastWhatsappContactAt: data?.lastWhatsappContactAt || new Date().toISOString() } : prev));
+      await markContactedMutation.mutateAsync();
     } catch (err) {
       console.error('Failed to mark contacted today:', err);
       const raw = err?.response?.data?.error || err?.message || 'Failed to mark contacted';
@@ -125,13 +166,17 @@ const LeadDetail = () => {
     }
   };
 
+  const addNoteMutation = useMutation({
+    mutationFn: (content) => notesAPI.create({ leadId: id, content }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lead', id] }),
+  });
+
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
     
     try {
       setAddingNote(true);
-      await notesAPI.create({ leadId: id, content: newNote });
-      await loadLead();
+      await addNoteMutation.mutateAsync(newNote);
       setNewNote('');
     } catch (err) {
       console.error('Failed to add note:', err);
@@ -140,51 +185,88 @@ const LeadDetail = () => {
     }
   };
 
+  const updateNoteMutation = useMutation({
+    mutationFn: ({ noteId, content }) => notesAPI.update(noteId, content),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lead', id] }),
+  });
+
   const handleUpdateNote = async (noteId, content) => {
     try {
-      await notesAPI.update(noteId, content);
-      await loadLead();
+      await updateNoteMutation.mutateAsync({ noteId, content });
       setEditingNote(null);
     } catch (err) {
       console.error('Failed to update note:', err);
     }
   };
 
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId) => notesAPI.delete(noteId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lead', id] }),
+  });
+
   const handleDeleteNote = async (noteId) => {
     if (!window.confirm('Delete this note?')) return;
     
     try {
-      await notesAPI.delete(noteId);
-      await loadLead();
+      await deleteNoteMutation.mutateAsync(noteId);
     } catch (err) {
       console.error('Failed to delete note:', err);
     }
   };
 
+  const addFollowUpMutation = useMutation({
+    mutationFn: (payload) => followUpsAPI.create(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'today'] });
+    },
+  });
+
   const handleAddFollowUp = async () => {
     if (!followUpData.date || !followUpData.time) return;
 
     try {
-      await followUpsAPI.create({
+      setFollowUpError('');
+      await addFollowUpMutation.mutateAsync({
         leadId: id,
         date: followUpData.date,
         time: followUpData.time,
         note: followUpData.note,
       });
-      await loadLead();
       setShowAddFollowUp(false);
       setFollowUpData({ date: '', time: '', note: '' });
     } catch (err) {
-      console.error('Failed to add follow-up:', err);
+      const data = err?.response?.data;
+      const raw =
+        data?.errors?.[0]?.msg ||
+        data?.error ||
+        err?.message ||
+        'Failed to add follow-up';
+      const looksLikeMissingColumn =
+        typeof raw === 'string' &&
+        (raw.toLowerCase().includes('notification_claimed_at') || (raw.toLowerCase().includes('column') && raw.toLowerCase().includes('schema cache')));
+      setFollowUpError(
+        looksLikeMissingColumn
+          ? 'Database needs an update. Run leadmarka-crm/database/migrations/2026-02-04_follow-ups-notification-columns.sql in Supabase SQL Editor, then try again.'
+          : raw
+      );
+      console.error('Failed to add follow-up:', raw, data || err);
     }
   };
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: () => leadsAPI.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      navigate('/leads');
+    },
+  });
 
   const handleDeleteLead = async () => {
     if (!window.confirm('Are you sure you want to delete this lead? This cannot be undone.')) return;
     
     try {
-      await leadsAPI.delete(id);
-      navigate('/leads');
+      await deleteLeadMutation.mutateAsync();
     } catch (err) {
       console.error('Failed to delete lead:', err);
     }
@@ -293,7 +375,10 @@ const LeadDetail = () => {
                 type="text"
                 list="conversation-tag-suggestions"
                 value={conversationLabelDraft}
-                onChange={(e) => setConversationLabelDraft(e.target.value)}
+                onChange={(e) => {
+                  setConversationLabelDraft(e.target.value);
+                  setIsConversationLabelDirty(true);
+                }}
                 maxLength={60}
                 placeholder="e.g., Price enquiry"
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
@@ -319,6 +404,7 @@ const LeadDetail = () => {
                   key={opt}
                   onClick={() => {
                     setConversationLabelDraft(opt);
+                    setIsConversationLabelDirty(true);
                     handleSaveConversationLabel(opt);
                   }}
                   className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -330,6 +416,7 @@ const LeadDetail = () => {
                 <button
                   onClick={() => {
                     setConversationLabelDraft('');
+                    setIsConversationLabelDirty(true);
                     handleSaveConversationLabel('');
                   }}
                   className="px-3 py-1.5 rounded-full text-xs font-medium bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -340,18 +427,18 @@ const LeadDetail = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <Clock className="w-4 h-4 text-gray-500" />
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <Clock className="w-4 h-4 text-gray-500 shrink-0" />
               Last WhatsApp contact
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
                 <div className="text-sm font-medium text-gray-900">
                   {lastContactLabel}
                 </div>
                 {lastContactExact && (
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 mt-0.5">
                     {lastContactExact}
                   </div>
                 )}
@@ -359,7 +446,7 @@ const LeadDetail = () => {
               <button
                 onClick={handleMarkContactedToday}
                 disabled={markingContacted}
-                className="px-3 py-2 bg-whatsapp-500 text-white rounded-lg text-sm font-medium hover:bg-whatsapp-600 disabled:opacity-50"
+                className="shrink-0 w-full sm:w-auto px-4 py-2.5 bg-whatsapp-500 text-white rounded-lg text-sm font-medium hover:bg-whatsapp-600 disabled:opacity-50"
               >
                 {markingContacted ? 'Marking...' : 'Mark contacted today'}
               </button>
@@ -527,28 +614,30 @@ const LeadDetail = () => {
               <h3 className="font-medium text-gray-900 mb-3">Schedule Follow-up</h3>
               
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="min-w-0 flex flex-col">
+                    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="followup-date">
                       Date *
                     </label>
                     <input
+                      id="followup-date"
                       type="date"
                       value={followUpData.date}
                       onChange={(e) => setFollowUpData({ ...followUpData, date: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full min-w-0 min-h-[48px] px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-base touch-manipulation bg-white"
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <div className="min-w-0 flex flex-col">
+                    <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="followup-time">
                       Time *
                     </label>
                     <input
+                      id="followup-time"
                       type="time"
                       value={followUpData.time}
                       onChange={(e) => setFollowUpData({ ...followUpData, time: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full min-w-0 min-h-[48px] px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-base touch-manipulation bg-white"
                       required
                     />
                   </div>
@@ -570,6 +659,12 @@ const LeadDetail = () => {
                     {followUpData.note.length}/140
                   </div>
                 </div>
+
+                {followUpError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                    {followUpError}
+                  </div>
+                )}
 
                 <div className="flex gap-2">
                   <button
