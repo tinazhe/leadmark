@@ -394,21 +394,25 @@ const sendDailySummary = async () => {
   }
 };
 
-// Schedule reminder checker - runs every minute
+// Run one cron cycle (reminders + daily summary). Used by external cron (e.g. cron-job.org).
+const runCronCycle = async () => {
+  await checkAndSendReminders();
+  await sendDailySummary();
+};
+
+// Schedule reminder checker - runs every minute (used by long-running worker)
 const scheduleReminders = () => {
   console.log('Starting reminder service...');
-  
-  // Check every minute for reminders due
   cron.schedule('* * * * *', () => {
     console.log('Checking for reminders...', new Date().toISOString());
-    checkAndSendReminders();
-    sendDailySummary();
+    runCronCycle();
   });
 };
 
-// Export for testing
+// Export for testing and cron API
 module.exports = {
   scheduleReminders,
+  runCronCycle,
   checkAndSendReminders,
   sendReminderEmail,
 };

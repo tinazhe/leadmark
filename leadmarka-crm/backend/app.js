@@ -56,9 +56,13 @@ const leadRoutes = require('./routes/leads');
 const followUpRoutes = require('./routes/followups');
 const noteRoutes = require('./routes/notes');
 const dashboardRoutes = require('./routes/dashboard');
+const cronRoutes = require('./routes/cron');
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/cron', cronRoutes);
+// Vercel rewrite may pass path without /api prefix; accept both so cron-job.org works
+app.use('/cron', cronRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/followups', followUpRoutes);
 app.use('/api/notes', noteRoutes);
