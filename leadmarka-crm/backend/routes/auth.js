@@ -4,15 +4,25 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const supabase = require('../config/supabase');
 const { Resend } = require('resend');
+const { buildEmailLayoutHtml, buildEmailButtonHtml } = require('../services/reminderService');
+const { resolveWorkspaceContext } = require('../middleware/workspace');
 
 const router = express.Router();
+
+const TEAM_INBOX_ENABLED = String(process.env.TEAM_INBOX_ENABLED || '').toLowerCase() === 'true';
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+const isMissingWorkspaceTable = (error) => {
+  const message = error?.message || '';
+  return message.includes('workspace_members') && message.includes('does not exist');
+};
 
 // Register
 router.post('/register', [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   body('fullName').trim().notEmpty(),
+  body('inviteToken').optional().trim().notEmpty(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -30,21 +40,56 @@ router.post('/register', [
       reminderLeadMinutes,
       dailySummaryEnabled,
       dailySummaryTime,
+      inviteToken,
     } = req.body;
 
-    // Create user in Supabase Auth
+    let pendingInvite = null;
+    if (inviteToken) {
+      const { data: invite, error: inviteError } = await supabase
+        .from('pending_invites')
+        .select('*')
+        .eq('token', inviteToken)
+        .single();
+
+      if (inviteError) {
+        const message = inviteError?.message || '';
+        if (message.includes('pending_invites') && message.includes('does not exist')) {
+          return res.status(400).json({
+            error: 'Database needs update. Run leadmarka-crm/database/migrations/2026-02-05_team-inbox-foundation.sql in Supabase SQL Editor.',
+          });
+        }
+      }
+
+      if (inviteError || !invite) {
+        return res.status(400).json({ error: 'Invite token is invalid or expired' });
+      }
+
+      const isExpired = invite.expires_at && new Date(invite.expires_at).getTime() < Date.now();
+      if (isExpired) {
+        return res.status(400).json({ error: 'Invite token is expired' });
+      }
+
+      if (invite.email && invite.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(400).json({ error: 'Invite token does not match this email' });
+      }
+
+      pendingInvite = invite;
+    }
+
+    // Create user in Supabase Auth (trigger creates profile row via handle_new_user)
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true, // Auto-confirm for MVP
+      user_metadata: { full_name: fullName },
     });
 
     if (authError) {
       return res.status(400).json({ error: authError.message });
     }
 
-    // Create profile
-    const profileInsert = {
+    // Upsert profile (trigger may have created row; upsert avoids duplicate key if trigger ran)
+    const profileRow = {
       id: authData.user.id,
       full_name: fullName,
       business_name: businessName || null,
@@ -52,29 +97,75 @@ router.post('/register', [
     };
 
     if (typeof reminderEnabled === 'boolean') {
-      profileInsert.reminder_enabled = reminderEnabled;
+      profileRow.reminder_enabled = reminderEnabled;
     }
 
     if (Number.isInteger(reminderLeadMinutes)) {
-      profileInsert.reminder_lead_minutes = reminderLeadMinutes;
+      profileRow.reminder_lead_minutes = reminderLeadMinutes;
     }
 
     if (typeof dailySummaryEnabled === 'boolean') {
-      profileInsert.daily_summary_enabled = dailySummaryEnabled;
+      profileRow.daily_summary_enabled = dailySummaryEnabled;
     }
 
     if (typeof dailySummaryTime === 'string' && dailySummaryTime.trim()) {
-      profileInsert.daily_summary_time = dailySummaryTime.trim();
+      profileRow.daily_summary_time = dailySummaryTime.trim();
     }
 
-    const { error: profileError } = await supabase
+    const { data: upsertedProfile, error: profileError } = await supabase
       .from('profiles')
-      .insert([profileInsert]);
+      .upsert([profileRow], { onConflict: 'id' })
+      .select('id')
+      .single();
 
-    if (profileError) {
-      // Rollback: delete the auth user
+    if (profileError || !upsertedProfile) {
       await supabase.auth.admin.deleteUser(authData.user.id);
-      return res.status(400).json({ error: profileError.message });
+      const message = profileError?.message || '';
+      if (message.includes('Row Level Security') || message.includes('profiles')) {
+        return res.status(400).json({
+          error: 'Database setup required. Run leadmarka-crm/database/migrations/2026-02-05_profiles-on-auth-signup.sql in Supabase SQL Editor.',
+        });
+      }
+      return res.status(400).json({ error: profileError?.message || 'Failed to create profile' });
+    }
+
+    if (pendingInvite) {
+      const { error: memberError } = await supabase
+        .from('workspace_members')
+        .insert([{
+          owner_id: pendingInvite.owner_id,
+          user_id: authData.user.id,
+          role: 'member',
+        }]);
+
+      if (memberError) {
+        if (isMissingWorkspaceTable(memberError)) {
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          return res.status(400).json({
+            error: 'Database needs update. Run leadmarka-crm/database/migrations/2026-02-05_team-inbox-foundation.sql in Supabase SQL Editor.',
+          });
+        }
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        return res.status(400).json({ error: memberError.message });
+      }
+
+      await supabase
+        .from('pending_invites')
+        .delete()
+        .eq('id', pendingInvite.id);
+    } else {
+      const { error: ownerError } = await supabase
+        .from('workspace_members')
+        .insert([{
+          owner_id: authData.user.id,
+          user_id: authData.user.id,
+          role: 'owner',
+        }]);
+
+      if (ownerError && !isMissingWorkspaceTable(ownerError)) {
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        return res.status(400).json({ error: ownerError.message });
+      }
     }
 
     // Generate JWT
@@ -186,17 +277,41 @@ router.post('/forgot-password', [
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
-    // Send email
+    // Send email (trim trailing dots so e.g. info@update.leadmarka.co.zw. is valid)
+    const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
+    const html = buildEmailLayoutHtml({
+      preheader: 'Reset your LeadMarka password',
+      title: 'Password reset',
+      subtitle: 'Click below to choose a new password.',
+      bodyHtml: `
+        <p class="email-body" style="margin: 0 0 12px 0; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 20px; color: #1f2937;">
+          This reset link expires in 1 hour.
+        </p>
+      `,
+      ctaHtml: `
+        <div style="margin-top: 12px;">
+          ${buildEmailButtonHtml({
+            href: resetUrl,
+            label: 'Reset password',
+            backgroundColor: '#f97316',
+          })}
+        </div>
+      `,
+    });
+
+    const text = [
+      'Password reset',
+      '',
+      'Use the link below to reset your password. This link expires in 1 hour.',
+      resetUrl,
+    ].join('\n');
+
     await resend.emails.send({
-      from: process.env.FROM_EMAIL,
+      from: fromEmail,
       to: email,
       subject: 'Reset your LeadMarka password',
-      html: `
-        <h2>Password Reset</h2>
-        <p>Click the link below to reset your password:</p>
-        <a href="${resetUrl}">${resetUrl}</a>
-        <p>This link expires in 1 hour.</p>
-      `,
+      html,
+      text,
     });
 
     res.json({ message: 'Password reset email sent' });
@@ -288,6 +403,16 @@ router.get('/me', async (req, res) => {
       return res.status(400).json({ error: profileError.message });
     }
 
+    const context = await resolveWorkspaceContext(user.id);
+    let hasTeamMembers = false;
+    if (TEAM_INBOX_ENABLED) {
+      const { count, error } = await supabase
+        .from('workspace_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('owner_id', context.ownerId);
+      if (!error) hasTeamMembers = (count || 0) > 1;
+    }
+
     res.json({
       id: user.id,
       email: user.email,
@@ -298,6 +423,10 @@ router.get('/me', async (req, res) => {
       reminderLeadMinutes: profile.reminder_lead_minutes,
       dailySummaryEnabled: profile.daily_summary_enabled,
       dailySummaryTime: profile.daily_summary_time,
+      workspaceOwnerId: context.ownerId,
+      role: context.role,
+      hasTeamMembers,
+      teamInboxEnabled: TEAM_INBOX_ENABLED,
     });
   } catch (error) {
     console.error('Get user error:', error);

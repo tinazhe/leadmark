@@ -62,12 +62,13 @@ const buildEmailButtonHtml = ({ href, label, backgroundColor, textColor = '#ffff
   const safeHref = escapeHtml(href);
   const safeLabel = escapeHtml(label);
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse: separate;">
+    <table role="presentation" cellpadding="0" cellspacing="0" class="email-button" style="border-collapse: separate;">
       <tr>
-        <td bgcolor="${backgroundColor}" style="border-radius: 10px;">
+        <td bgcolor="${backgroundColor}" style="border-radius: 10px; mso-padding-alt: 14px 24px;">
           <a href="${safeHref}"
-             style="display: inline-block; padding: 14px 22px; font-family: ${EMAIL_BRAND.font};
-                    font-size: 14px; font-weight: 700; color: ${textColor}; text-decoration: none;">
+             style="display: inline-block; padding: 14px 24px; font-family: ${EMAIL_BRAND.font};
+                    font-size: 14px; font-weight: 700; color: ${textColor}; text-decoration: none;
+                    line-height: 20px; min-width: 44px; text-align: center;">
             ${safeLabel}
           </a>
         </td>
@@ -114,16 +115,42 @@ const buildEmailLayoutHtml = ({ preheader, title, subtitle, bodyHtml, ctaHtml, f
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="x-apple-disable-message-reformatting" />
     <title>${safeTitle}</title>
+    <style>
+      body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+      table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { -ms-interpolation-mode: bicubic; }
+      .email-container { width: 100%; }
+      .email-card { width: 100%; max-width: 600px; }
+      .email-padding { padding: 24px; }
+      .email-title { font-size: 22px; line-height: 28px; }
+      .email-subtitle, .email-body { font-size: 14px; line-height: 20px; }
+      .email-button a { display: inline-block; }
+      @media screen and (max-width: 600px) {
+        .email-card { max-width: 100% !important; }
+        .email-padding { padding: 16px !important; }
+        .email-title { font-size: 20px !important; line-height: 26px !important; }
+        .email-subtitle, .email-body { font-size: 16px !important; line-height: 22px !important; }
+        .email-button td { width: 100% !important; }
+        .email-button a { display: block !important; }
+      }
+      @media screen and (max-width: 480px) {
+        .email-padding { padding: 14px !important; }
+        .email-title { font-size: 18px !important; line-height: 24px !important; }
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: ${EMAIL_BRAND.bg}; }
+      }
+    </style>
   </head>
   <body style="margin: 0; padding: 0; background: ${EMAIL_BRAND.bg};">
     <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent; mso-hide: all;">
       ${safePreheader}
     </div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: ${EMAIL_BRAND.bg};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-container" style="border-collapse: collapse; background: ${EMAIL_BRAND.bg};">
       <tr>
         <td align="center" style="padding: 24px 12px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-                 style="border-collapse: separate; width: 600px; max-width: 600px; background: #ffffff;
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="email-card"
+                 style="border-collapse: separate; width: 100%; max-width: 600px; background: #ffffff;
                         border: 1px solid ${EMAIL_BRAND.border}; border-radius: 16px; overflow: hidden;">
             <tr>
               <td style="padding: 18px 24px; border-bottom: 1px solid ${EMAIL_BRAND.border}; background: #ffffff;">
@@ -131,11 +158,11 @@ const buildEmailLayoutHtml = ({ preheader, title, subtitle, bodyHtml, ctaHtml, f
               </td>
             </tr>
             <tr>
-              <td style="padding: 22px 24px 24px 24px;">
-                <h1 style="margin: 0 0 8px 0; font-family: ${EMAIL_BRAND.font}; font-size: 22px; line-height: 28px; color: ${EMAIL_BRAND.dark};">
+              <td class="email-padding" style="padding: 22px 24px 24px 24px;">
+                <h1 class="email-title" style="margin: 0 0 8px 0; font-family: ${EMAIL_BRAND.font}; font-size: 22px; line-height: 28px; color: ${EMAIL_BRAND.dark};">
                   ${safeTitle}
                 </h1>
-                ${safeSubtitle ? `<p style="margin: 0 0 16px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.muted};">
+                ${safeSubtitle ? `<p class="email-subtitle" style="margin: 0 0 16px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.muted};">
                   ${safeSubtitle}
                 </p>` : ''}
                 ${bodyHtml || ''}
@@ -176,6 +203,18 @@ const getUserEmail = async (userId, cache) => {
     if (cache) cache.set(userId, null);
     return null;
   }
+};
+
+const getProfileName = async (userId) => {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('full_name, business_name')
+    .eq('id', userId)
+    .single();
+
+  if (error || !data) return null;
+  return data.business_name || data.full_name || null;
 };
 
 const fetchProfilesByIds = async (userIds) => {
@@ -324,7 +363,7 @@ const sendReminderEmail = async (userEmail, followUp, lead) => {
             <div style="font-family: ${EMAIL_BRAND.font}; font-size: 18px; line-height: 24px; font-weight: 800; color: ${EMAIL_BRAND.dark}; margin: 0 0 10px 0;">
               ${leadName}
             </div>
-            <div style="font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+            <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
               <div style="margin: 8px 0 0 0;">
                 <span style="color: ${EMAIL_BRAND.muted};">Phone</span><br />
                 <span style="font-weight: 700;">${phoneNumber || '-'}</span>
@@ -367,10 +406,10 @@ const sendReminderEmail = async (userEmail, followUp, lead) => {
 
     const footerHtml = `
       <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid ${EMAIL_BRAND.border};">
-        <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+        <p class="email-body" style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
           ${frontendUrl ? `Open <a href="${escapeHtml(frontendUrl)}" style="color: ${EMAIL_BRAND.orange}; text-decoration: none; font-weight: 700;">LeadMarka</a> to view all your follow-ups.` : 'Open LeadMarka to view all your follow-ups.'}
         </p>
-        <p style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+        <p class="email-body" style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
           LeadMarka – WhatsApp CRM
         </p>
       </div>
@@ -402,8 +441,9 @@ const sendReminderEmail = async (userEmail, followUp, lead) => {
       .filter(Boolean)
       .join('\n');
 
+    const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
     await resend.emails.send({
-      from: process.env.FROM_EMAIL,
+      from: fromEmail,
       to: userEmail,
       subject: `Reminder: Follow-up with ${lead.name}`,
       html,
@@ -414,6 +454,101 @@ const sendReminderEmail = async (userEmail, followUp, lead) => {
     return true;
   } catch (error) {
     console.error('Failed to send reminder email:', error);
+    return false;
+  }
+};
+
+const sendLeadAssignedEmail = async ({ userId, assignedByUserId, leadName, leadPhone }) => {
+  try {
+    const userEmail = await getUserEmail(userId);
+    if (!userEmail) return false;
+
+    const assignedByName = await getProfileName(assignedByUserId);
+    const frontendUrl = getFrontendBaseUrl();
+    const safeLeadName = escapeHtml(leadName || 'Lead');
+    const safeLeadPhone = escapeHtml(leadPhone || '');
+
+    const html = buildEmailLayoutHtml({
+      preheader: `Lead assigned: ${leadName || 'Lead'}`,
+      title: 'New lead assigned',
+      subtitle: assignedByName ? `${assignedByName} assigned you a lead.` : 'A lead was assigned to you.',
+      bodyHtml: `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; margin-top: 12px;">
+          <tr>
+            <td style="border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid ${EMAIL_BRAND.orange};
+                       border-radius: 12px; padding: 16px; background: #ffffff;">
+              <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+                <strong>${safeLeadName}</strong><br />
+                <span style="color: ${EMAIL_BRAND.muted};">${safeLeadPhone || ''}</span>
+              </div>
+            </td>
+          </tr>
+        </table>
+      `,
+      ctaHtml: frontendUrl
+        ? buildEmailButtonHtml({ href: frontendUrl, label: 'Open LeadMarka', backgroundColor: EMAIL_BRAND.orange })
+        : '',
+    });
+
+    const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
+    await resend.emails.send({
+      from: fromEmail,
+      to: userEmail,
+      subject: `Lead assigned: ${leadName || 'Lead'}`,
+      html,
+      text: `Lead assigned: ${leadName || 'Lead'}${leadPhone ? ` (${leadPhone})` : ''}`,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to send lead assigned email:', error);
+    return false;
+  }
+};
+
+const sendLeadReassignedAwayEmail = async ({ userId, leadName, leadPhone }) => {
+  try {
+    const userEmail = await getUserEmail(userId);
+    if (!userEmail) return false;
+
+    const frontendUrl = getFrontendBaseUrl();
+    const safeLeadName = escapeHtml(leadName || 'Lead');
+    const safeLeadPhone = escapeHtml(leadPhone || '');
+
+    const html = buildEmailLayoutHtml({
+      preheader: `Lead reassigned: ${leadName || 'Lead'}`,
+      title: 'Lead reassigned',
+      subtitle: 'A lead was reassigned away from you.',
+      bodyHtml: `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: separate; margin-top: 12px;">
+          <tr>
+            <td style="border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid ${EMAIL_BRAND.orange};
+                       border-radius: 12px; padding: 16px; background: #ffffff;">
+              <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+                <strong>${safeLeadName}</strong><br />
+                <span style="color: ${EMAIL_BRAND.muted};">${safeLeadPhone || ''}</span>
+              </div>
+            </td>
+          </tr>
+        </table>
+      `,
+      ctaHtml: frontendUrl
+        ? buildEmailButtonHtml({ href: frontendUrl, label: 'Open LeadMarka', backgroundColor: EMAIL_BRAND.orange })
+        : '',
+    });
+
+    const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
+    await resend.emails.send({
+      from: fromEmail,
+      to: userEmail,
+      subject: `Lead reassigned: ${leadName || 'Lead'}`,
+      html,
+      text: `Lead reassigned: ${leadName || 'Lead'}${leadPhone ? ` (${leadPhone})` : ''}`,
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to send lead reassigned email:', error);
     return false;
   }
 };
@@ -608,7 +743,7 @@ const sendDailySummary = async () => {
               <tr>
                 <td style="background: #fef3c7; border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid #f59e0b;
                            border-radius: 12px; padding: 14px;">
-                  <div style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: #92400e;">
+                  <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: #92400e;">
                     ${escapeHtml(`${overdue.length} Overdue`)}
                   </div>
                   ${overdue
@@ -616,7 +751,7 @@ const sendDailySummary = async () => {
                       const name = escapeHtml(fu?.lead?.name || 'Lead');
                       const date = escapeHtml(fu?.follow_up_date || '');
                       return `
-                        <div style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
+                        <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
                           <span style="font-weight: 700;">${name}</span>
                           <span style="color: ${EMAIL_BRAND.muted};"> · Due ${date}</span>
                         </div>
@@ -636,7 +771,7 @@ const sendDailySummary = async () => {
               <tr>
                 <td style="background: #f9fafb; border: 1px solid ${EMAIL_BRAND.border}; border-left: 6px solid ${EMAIL_BRAND.orange};
                            border-radius: 12px; padding: 14px;">
-                  <div style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: ${EMAIL_BRAND.dark};">
+                  <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: ${EMAIL_BRAND.dark};">
                     ${escapeHtml(`${todayFollowUps.length} Today`)}
                   </div>
                   ${todayFollowUps
@@ -644,7 +779,7 @@ const sendDailySummary = async () => {
                       const name = escapeHtml(fu?.lead?.name || 'Lead');
                       const time = escapeHtml(fu?.follow_up_time || '');
                       return `
-                        <div style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
+                        <div class="email-body" style="font-family: ${EMAIL_BRAND.font}; margin: 6px 0; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.dark};">
                           <span style="font-weight: 700;">${name}</span>
                           <span style="color: ${EMAIL_BRAND.muted};"> · ${time}</span>
                         </div>
@@ -658,7 +793,7 @@ const sendDailySummary = async () => {
           : '';
 
       const summaryBodyHtml = `
-        <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+        <p class="email-body" style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
           You have <strong>${escapeHtml(followUps.length)}</strong> follow-ups requiring your attention today.
         </p>
         ${overdueHtml}
@@ -667,10 +802,10 @@ const sendDailySummary = async () => {
 
       const footerHtml = `
         <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid ${EMAIL_BRAND.border};">
-          <p style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          <p class="email-body" style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
             ${frontendUrl ? `Open <a href="${escapeHtml(frontendUrl)}" style="color: ${EMAIL_BRAND.orange}; text-decoration: none; font-weight: 700;">LeadMarka</a> to view all your follow-ups.` : 'Open LeadMarka to view all your follow-ups.'}
           </p>
-          <p style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          <p class="email-body" style="margin: 8px 0 0 0; font-family: ${EMAIL_BRAND.font}; font-size: 12px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
             LeadMarka – WhatsApp CRM
           </p>
         </div>
@@ -701,9 +836,9 @@ const sendDailySummary = async () => {
         .filter(Boolean)
         .join('\n');
 
-      // Send summary email
+      const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
       await resend.emails.send({
-        from: process.env.FROM_EMAIL,
+        from: fromEmail,
         to: userEmail,
         subject: `Your LeadMarka Daily Summary - ${followUps.length} follow-ups pending`,
         html: summaryHtml,
@@ -738,6 +873,10 @@ module.exports = {
   runCronCycle,
   checkAndSendReminders,
   sendReminderEmail,
+  sendLeadAssignedEmail,
+  sendLeadReassignedAwayEmail,
+  buildEmailLayoutHtml,
+  buildEmailButtonHtml,
 };
 
 // Auto-start if this file is run directly
