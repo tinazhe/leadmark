@@ -2,6 +2,9 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const supabase = require('../config/supabase');
 const authMiddleware = require('../middleware/auth');
+const { workspaceMiddleware } = require('../middleware/workspace');
+const { subscriptionMiddleware } = require('../middleware/subscription');
+const { logActivity } = require('../utils/activity');
 const { getDateStringInTimeZone, resolveTimeZone, DEFAULT_TIMEZONE } = require('../utils/timezone');
 
 const router = express.Router();
@@ -61,17 +64,17 @@ const normalizeTimeInput = (value) => {
 };
 
 // Get all follow-ups for a lead
-router.get('/lead/:leadId', authMiddleware, async (req, res) => {
+router.get('/lead/:leadId', authMiddleware, workspaceMiddleware, subscriptionMiddleware, async (req, res) => {
   try {
     const { leadId } = req.params;
-    const userId = req.userId;
+    const ownerId = req.workspaceOwnerId;
 
     // Verify lead belongs to user
     const { data: lead, error: leadError } = await supabase
       .from('leads')
       .select('id')
       .eq('id', leadId)
-      .eq('user_id', userId)
+      .eq('user_id', ownerId)
       .single();
 
     if (leadError || !lead) {
@@ -82,7 +85,6 @@ router.get('/lead/:leadId', authMiddleware, async (req, res) => {
       .from('follow_ups')
       .select('*')
       .eq('lead_id', leadId)
-      .eq('user_id', userId)
       .order('follow_up_date', { ascending: true })
       .order('follow_up_time', { ascending: true });
 
@@ -93,7 +95,7 @@ router.get('/lead/:leadId', authMiddleware, async (req, res) => {
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('timezone')
-      .eq('id', userId)
+      .eq('id', req.userId)
       .single();
 
     const userTimeZone = profileError ? DEFAULT_TIMEZONE : resolveTimeZone(profile?.timezone);
@@ -119,7 +121,7 @@ router.get('/lead/:leadId', authMiddleware, async (req, res) => {
 });
 
 // Create follow-up
-router.post('/', authMiddleware, [
+router.post('/', authMiddleware, workspaceMiddleware, subscriptionMiddleware, [
   body('leadId').notEmpty().withMessage('Lead ID is required'),
   body('date')
     .customSanitizer(normalizeDateInput)
@@ -140,17 +142,27 @@ router.post('/', authMiddleware, [
 
     const { leadId, date, time, note } = req.body;
     const userId = req.userId;
+    const ownerId = req.workspaceOwnerId;
+    const isOwner = req.workspaceRole === 'owner' || userId === ownerId;
 
     // Verify lead belongs to user
     const { data: lead, error: leadError } = await supabase
       .from('leads')
-      .select('id, name, phone_number')
+      .select('id, name, phone_number, assigned_user_id')
       .eq('id', leadId)
-      .eq('user_id', userId)
+      .eq('user_id', ownerId)
       .single();
 
     if (leadError || !lead) {
       return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    if (!isOwner && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can create follow-ups' });
+    }
+
+    if (isOwner && lead.assigned_user_id && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can create follow-ups' });
     }
 
     const { data: followUp, error } = await supabase
@@ -172,6 +184,13 @@ router.post('/', authMiddleware, [
       return res.status(400).json({ error: error.message });
     }
 
+    await logActivity({
+      leadId,
+      userId,
+      action: 'follow_up_created',
+      metadata: { date, time },
+    });
+
     res.status(201).json({
       id: followUp.id,
       leadId: followUp.lead_id,
@@ -190,7 +209,7 @@ router.post('/', authMiddleware, [
 });
 
 // Update follow-up
-router.put('/:id', authMiddleware, [
+router.put('/:id', authMiddleware, workspaceMiddleware, subscriptionMiddleware, [
   body('date')
     .optional()
     .customSanitizer(normalizeDateInput)
@@ -211,6 +230,37 @@ router.put('/:id', authMiddleware, [
     const { id } = req.params;
     const { date, time, note, completed } = req.body;
     const userId = req.userId;
+    const ownerId = req.workspaceOwnerId;
+    const isOwner = req.workspaceRole === 'owner' || userId === ownerId;
+
+    const { data: existingFollowUp, error: existingError } = await supabase
+      .from('follow_ups')
+      .select('id, lead_id, user_id')
+      .eq('id', id)
+      .single();
+
+    if (existingError || !existingFollowUp) {
+      return res.status(404).json({ error: 'Follow-up not found' });
+    }
+
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select('id, user_id, assigned_user_id')
+      .eq('id', existingFollowUp.lead_id)
+      .eq('user_id', ownerId)
+      .single();
+
+    if (leadError || !lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    if (!isOwner && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can update follow-ups' });
+    }
+
+    if (isOwner && lead.assigned_user_id && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can update follow-ups' });
+    }
 
     const updates = {};
     if (date !== undefined) updates.follow_up_date = date;
@@ -235,7 +285,6 @@ router.put('/:id', authMiddleware, [
       .from('follow_ups')
       .update(updates)
       .eq('id', id)
-      .eq('user_id', userId)
       .select()
       .single();
 
@@ -259,10 +308,41 @@ router.put('/:id', authMiddleware, [
 });
 
 // Mark follow-up as complete
-router.patch('/:id/complete', authMiddleware, async (req, res) => {
+router.patch('/:id/complete', authMiddleware, workspaceMiddleware, subscriptionMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
+    const ownerId = req.workspaceOwnerId;
+    const isOwner = req.workspaceRole === 'owner' || userId === ownerId;
+
+    const { data: existingFollowUp, error: existingError } = await supabase
+      .from('follow_ups')
+      .select('id, lead_id, user_id')
+      .eq('id', id)
+      .single();
+
+    if (existingError || !existingFollowUp) {
+      return res.status(404).json({ error: 'Follow-up not found' });
+    }
+
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select('id, user_id, assigned_user_id')
+      .eq('id', existingFollowUp.lead_id)
+      .eq('user_id', ownerId)
+      .single();
+
+    if (leadError || !lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    if (!isOwner && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can complete follow-ups' });
+    }
+
+    if (isOwner && lead.assigned_user_id && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can complete follow-ups' });
+    }
 
     const { data: followUp, error } = await supabase
       .from('follow_ups')
@@ -276,6 +356,13 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Follow-up not found' });
     }
 
+    await logActivity({
+      leadId: existingFollowUp.lead_id,
+      userId,
+      action: 'follow_up_completed',
+      metadata: { followUpId: id },
+    });
+
     res.json({
       id: followUp.id,
       completed: followUp.completed,
@@ -288,16 +375,46 @@ router.patch('/:id/complete', authMiddleware, async (req, res) => {
 });
 
 // Delete follow-up
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, workspaceMiddleware, subscriptionMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
+    const ownerId = req.workspaceOwnerId;
+    const isOwner = req.workspaceRole === 'owner' || userId === ownerId;
+
+    const { data: existingFollowUp, error: existingError } = await supabase
+      .from('follow_ups')
+      .select('id, lead_id, user_id')
+      .eq('id', id)
+      .single();
+
+    if (existingError || !existingFollowUp) {
+      return res.status(404).json({ error: 'Follow-up not found' });
+    }
+
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select('id, user_id, assigned_user_id')
+      .eq('id', existingFollowUp.lead_id)
+      .eq('user_id', ownerId)
+      .single();
+
+    if (leadError || !lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    if (!isOwner && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can delete follow-ups' });
+    }
+
+    if (isOwner && lead.assigned_user_id && lead.assigned_user_id !== userId) {
+      return res.status(403).json({ error: 'Only the assigned owner can delete follow-ups' });
+    }
 
     const { error } = await supabase
       .from('follow_ups')
       .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
+      .eq('id', id);
 
     if (error) {
       return res.status(404).json({ error: 'Follow-up not found' });

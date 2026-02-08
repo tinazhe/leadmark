@@ -1,4 +1,5 @@
 const express = require('express');
+require('express-async-errors');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
@@ -6,12 +7,6 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const app = express();
-
-// Handle OPTIONS preflight immediately (vercel.json adds CORS headers; we need 2xx for preflight to succeed).
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
-  next();
-});
 
 // CORS: allow frontend origins (production + dev). FRONTEND_URL from env for flexibility.
 const allowedOrigins = [
@@ -32,6 +27,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 const shouldRedactKey = (key) => {
   if (!key || typeof key !== 'string') return false;
@@ -80,6 +76,9 @@ const noteRoutes = require('./routes/notes');
 const dashboardRoutes = require('./routes/dashboard');
 const cronRoutes = require('./routes/cron');
 const adminRoutes = require('./routes/admin');
+const workspaceRoutes = require('./routes/workspace');
+const activityRoutes = require('./routes/activity');
+const billingRoutes = require('./routes/billing');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -91,6 +90,9 @@ app.use('/api/followups', followUpRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/workspace', workspaceRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

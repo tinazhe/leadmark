@@ -19,7 +19,8 @@ router.get('/reminders', async (req, res) => {
     await runCronCycle();
     res.json({ ok: true, timestamp: new Date().toISOString() });
   } catch (err) {
-    console.error('Cron reminders error:', err);
+    console.error('Cron reminders error:', err?.message ?? err);
+    if (err?.stack) console.error(err.stack);
     res.status(500).json({ error: 'Cron failed', timestamp: new Date().toISOString() });
   }
 });

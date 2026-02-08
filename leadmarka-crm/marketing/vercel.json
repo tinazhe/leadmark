@@ -1,4 +1,12 @@
 {
   "version": 2,
-  "cleanUrls": true
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://app.leadmarka.co.zw/:path*",
+      "permanent": true,
+      "has": [{ "type": "host", "value": "leadmarka.co.zw" }]
+    }
+  ]
 }

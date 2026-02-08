@@ -242,7 +242,7 @@ JWT_SECRET=your-super-secret-jwt-key-min-32-chars-long
 
 # Email Configuration (Resend - sign up at https://resend.com)
 RESEND_API_KEY=your-resend-api-key
-FROM_EMAIL=noreply@yourdomain.com
+FROM_EMAIL=info@update.leadmarka.co.zw
 
 # Server Configuration
 PORT=3001
@@ -314,9 +314,9 @@ RLS ensures users can only see their own data. Here's what we set up:
 - Run the SQL schema again in the SQL Editor
 - Make sure you're connected to the right project
 
-### "new row violates row-level security policy"
-- RLS is working! The app is trying to insert without proper user context
-- Make sure your JWT token is valid and being sent in requests
+### "new row violates row-level security policy for table profiles" (on register)
+- **Run the signup trigger migration** so the database creates the profile row when a user signs up. In Supabase SQL Editor, run the contents of `database/migrations/2026-02-05_profiles-on-auth-signup.sql`.
+- **Use the service role key in the backend:** Set `SUPABASE_SERVICE_KEY` to your project’s **Service role** key (Dashboard → Project Settings → API). The anon key is subject to RLS and will cause this error on register.
 
 ### "Failed to send email"
 - You need to set up Resend for email notifications

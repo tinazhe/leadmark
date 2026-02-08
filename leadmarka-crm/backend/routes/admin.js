@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const supabase = require('../config/supabase');
 
 const router = express.Router();
@@ -149,7 +150,7 @@ router.get('/analytics', adminAuth, async (req, res) => {
     const cutoff7 = isoDaysAgo(7);
     const cutoff30 = isoDaysAgo(30);
 
-    const statuses = ['new', 'interested', 'follow-up', 'won', 'lost'];
+    const statuses = ['new', 'contacted', 'quoted', 'follow-up', 'negotiating', 'won', 'lost'];
 
     const [
       totalUsers,
@@ -282,6 +283,86 @@ router.get('/analytics', adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Admin analytics error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────
+// POST /api/admin/subscriptions/comp — grant free access to a workspace
+// ──────────────────────────────────────────────────────────────
+router.post('/subscriptions/comp', adminAuth, [
+  body('ownerId').trim().notEmpty().withMessage('ownerId is required'),
+  body('compedUntil').optional().isISO8601().withMessage('compedUntil must be ISO 8601'),
+  body('compedReason').optional().trim(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { ownerId, compedUntil, compedReason } = req.body;
+
+    // Default: comp for 10 years (effectively indefinite)
+    const until = compedUntil || new Date(Date.now() + 10 * 365.25 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('workspace_subscriptions')
+      .upsert([{
+        owner_id: ownerId,
+        comped_until: until,
+        comped_reason: compedReason || null,
+        comped_by: req.adminEmail || 'admin',
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      }], { onConflict: 'owner_id' })
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    console.log(`Workspace ${ownerId} comped until ${until} by ${req.adminEmail || 'admin'}`);
+    res.json({ status: 'comped', ownerId, compedUntil: until, subscription: data });
+  } catch (error) {
+    console.error('Admin comp error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/subscriptions/remove-comp — remove comp from a workspace
+router.post('/subscriptions/remove-comp', adminAuth, [
+  body('ownerId').trim().notEmpty().withMessage('ownerId is required'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { ownerId } = req.body;
+
+    const { data, error } = await supabase
+      .from('workspace_subscriptions')
+      .update({
+        comped_until: null,
+        comped_reason: null,
+        comped_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('owner_id', ownerId)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    console.log(`Comp removed from workspace ${ownerId} by ${req.adminEmail || 'admin'}`);
+    res.json({ status: 'comp_removed', ownerId, subscription: data });
+  } catch (error) {
+    console.error('Admin remove-comp error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

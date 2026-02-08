@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, Users, Settings, Plus, LogOut, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,7 +8,23 @@ const Layout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof window !== 'undefined' ? window.navigator?.onLine !== false : true
+  );
   const logoUrl = `${process.env.PUBLIC_URL}/leadmarka_logo-color.svg`;
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -22,6 +38,7 @@ const Layout = () => {
 
   const getPageTitle = () => {
     if (location.pathname === '/') return 'Today';
+    if (location.pathname === '/inbox') return 'Team Inbox';
     if (location.pathname === '/leads') return 'All Leads';
     if (location.pathname === '/leads/new') return 'New Lead';
     if (location.pathname.startsWith('/leads/')) return 'Lead Details';
@@ -29,7 +46,7 @@ const Layout = () => {
     return 'LeadMarka';
   };
 
-  const showBackButton = location.pathname !== '/' && location.pathname !== '/leads';
+  const showBackButton = location.pathname !== '/' && location.pathname !== '/leads' && location.pathname !== '/inbox';
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -59,7 +76,7 @@ const Layout = () => {
           {user && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-600 hidden sm:block">
-                {user.businessName || user.fullName}
+                {user.workspaceCompanyName || user.businessName || user.fullName}
               </span>
               <button
                 onClick={() => setShowLogoutConfirm(true)}
@@ -70,6 +87,14 @@ const Layout = () => {
             </div>
           )}
         </div>
+
+        {!isOnline && (
+          <div className="border-t border-amber-200 bg-amber-50">
+            <div className="max-w-lg mx-auto px-4 py-2 text-sm text-amber-900">
+              You’re offline. Some data may be outdated.
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -91,15 +116,17 @@ const Layout = () => {
           </Link>
           
           <Link
-            to="/leads"
+            to={user?.teamInboxEnabled ? '/inbox' : '/leads'}
             className={`flex flex-col items-center justify-center flex-1 h-full ${
-              isActive('/leads') && !location.pathname.includes('/new')
+              (user?.teamInboxEnabled ? isActive('/inbox') : isActive('/leads') && !location.pathname.includes('/new'))
                 ? 'text-primary-600'
                 : 'text-gray-500'
             }`}
           >
             <Users className="w-6 h-6" />
-            <span className="text-xs mt-1">Leads</span>
+            <span className="text-xs mt-1">
+              {user?.teamInboxEnabled ? 'Inbox' : 'Leads'}
+            </span>
           </Link>
           
           <Link

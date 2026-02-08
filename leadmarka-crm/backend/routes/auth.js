@@ -166,6 +166,26 @@ router.post('/register', [
         await supabase.auth.admin.deleteUser(authData.user.id);
         return res.status(400).json({ error: ownerError.message });
       }
+
+      // Create trial subscription for new workspace owner (7-day trial + 1-day grace)
+      const trialNow = new Date();
+      const trialEnd = new Date(trialNow.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const graceEnd = new Date(trialEnd.getTime() + 1 * 24 * 60 * 60 * 1000);
+      const { error: subError } = await supabase
+        .from('workspace_subscriptions')
+        .insert([{
+          owner_id: authData.user.id,
+          status: 'trialing',
+          trial_start_at: trialNow.toISOString(),
+          trial_end_at: trialEnd.toISOString(),
+          grace_end_at: graceEnd.toISOString(),
+        }]);
+      if (subError) {
+        const subMsg = subError?.message || '';
+        if (!subMsg.includes('workspace_subscriptions') || !subMsg.includes('does not exist')) {
+          console.warn('Failed to create trial subscription:', subError.message);
+        }
+      }
     }
 
     // Generate JWT

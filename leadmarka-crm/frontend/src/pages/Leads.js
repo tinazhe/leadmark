@@ -1,22 +1,27 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, MessageCircle, ChevronRight, Filter, X, Check, Clock, Tag } from 'lucide-react';
+import { Search, MessageCircle, ChevronRight, Filter, X, Check, Clock, Tag, User } from 'lucide-react';
 import { formatDistanceToNow, isToday, parseISO } from 'date-fns';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { leadsAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'New', className: 'status-new' },
-  { value: 'interested', label: 'Interested', className: 'status-interested' },
+  { value: 'contacted', label: 'Contacted', className: 'status-contacted' },
+  { value: 'quoted', label: 'Quoted', className: 'status-quoted' },
   { value: 'follow-up', label: 'Follow-up', className: 'status-follow-up' },
+  { value: 'negotiating', label: 'Negotiating', className: 'status-negotiating' },
   { value: 'won', label: 'Won', className: 'status-won' },
   { value: 'lost', label: 'Lost', className: 'status-lost' },
 ];
 
 const Leads = () => {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const teamInboxEnabled = Boolean(user?.teamInboxEnabled);
 
   const queryClient = useQueryClient();
 
@@ -215,6 +220,7 @@ const Leads = () => {
             <LeadCard
               key={lead.id}
               lead={lead}
+              teamInboxEnabled={teamInboxEnabled}
               onStatusChange={handleStatusChange}
               onMarkContactedToday={handleMarkContactedToday}
             />
@@ -225,7 +231,7 @@ const Leads = () => {
   );
 };
 
-const LeadCard = ({ lead, onStatusChange, onMarkContactedToday }) => {
+const LeadCard = ({ lead, teamInboxEnabled, onStatusChange, onMarkContactedToday }) => {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [markingContacted, setMarkingContacted] = useState(false);
 
@@ -248,7 +254,7 @@ const LeadCard = ({ lead, onStatusChange, onMarkContactedToday }) => {
             <h3 className="font-semibold text-gray-900 truncate">{lead.name}</h3>
             <p className="text-sm text-gray-600">{lead.phoneNumber}</p>
 
-            {(lead.conversationLabel || lastContactText) && (
+            {(lead.conversationLabel || lastContactText || teamInboxEnabled) && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {lead.conversationLabel && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-primary-50 text-primary-700 border border-primary-200">
@@ -260,6 +266,12 @@ const LeadCard = ({ lead, onStatusChange, onMarkContactedToday }) => {
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200">
                     <Clock className="w-3.5 h-3.5" />
                     Last WA: {lastContactText}
+                  </span>
+                )}
+                {teamInboxEnabled && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
+                    <User className="w-3.5 h-3.5" />
+                    {lead.assignedUser?.fullName || 'Unassigned'}
                   </span>
                 )}
               </div>
@@ -308,8 +320,10 @@ const LeadCard = ({ lead, onStatusChange, onMarkContactedToday }) => {
                 >
                   <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
                     status.value === 'new' ? 'bg-gray-400' :
-                    status.value === 'interested' ? 'bg-blue-400' :
+                    status.value === 'contacted' ? 'bg-blue-400' :
+                    status.value === 'quoted' ? 'bg-indigo-400' :
                     status.value === 'follow-up' ? 'bg-yellow-400' :
+                    status.value === 'negotiating' ? 'bg-amber-400' :
                     status.value === 'won' ? 'bg-green-400' :
                     'bg-red-400'
                   }`}></span>

@@ -13,6 +13,20 @@ LeadMarka is a lightweight CRM built specifically for small businesses in Zimbab
 - Keep notes on every conversation
 - See what's urgent today at a glance
 
+## Changelog
+
+See [CHANGELOG.md](../CHANGELOG.md) in the repo root. To auto-update it from commits:
+
+```bash
+# Add new changelog entries from conventional commits (feat:, fix:, etc.)
+npm run changelog
+
+# Release: bump version, update changelog, create git tag, commit
+npm run release
+```
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat: add X`, `fix: resolve Y`). Tag your releases (`git tag v1.0.0`) so the changelog knows what's new.
+
 ## Quick Start (5 minutes)
 
 ### Prerequisites
@@ -171,7 +185,7 @@ SUPABASE_SERVICE_KEY=your_service_key
 SUPABASE_ANON_KEY=your_anon_key
 JWT_SECRET=random_string_min_32_chars
 RESEND_API_KEY=your_resend_key
-FROM_EMAIL=noreply@yourdomain.com
+FROM_EMAIL=info@update.leadmarka.co.zw
 FRONTEND_URL=http://localhost:3000
 PORT=3001
 ```
@@ -196,7 +210,7 @@ See `DEPLOYMENT.md` for detailed deployment instructions.
 
 Quick options:
 - **Frontend**: Vercel, Netlify
-- **Backend**: Render, Railway, Heroku
+- **Backend**: Vercel (API + cron), Railway, Heroku
 - **Database**: Supabase (cloud)
 
 ## Success Metrics

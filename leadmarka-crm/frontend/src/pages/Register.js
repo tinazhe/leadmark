@@ -1,23 +1,26 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Building2, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import LegalFooter from '../components/LegalFooter';
 
 const Register = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { register } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     confirmPassword: '',
-    fullName: '',
+    firstName: '',
+    lastName: '',
     businessName: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const logoUrl = `${process.env.PUBLIC_URL}/leadmarka_logo-color.svg`;
+  const inviteToken = new URLSearchParams(location.search).get('invite');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,15 +40,23 @@ const Register = () => {
     }
 
     try {
+      const fullName = [formData.firstName, formData.lastName]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(' ');
+
       await register({
         email: formData.email,
         password: formData.password,
-        fullName: formData.fullName,
+        fullName,
         businessName: formData.businessName,
+        inviteToken: inviteToken || undefined,
       });
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
+      const data = err.response?.data;
+      const msg = data?.error || (Array.isArray(data?.errors) && data.errors[0]?.msg) || 'Registration failed';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -76,16 +87,35 @@ const Register = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name *
+                Name *
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
+                  data-testid="register-firstName"
                   type="text"
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                  value={formData.firstName}
+                  onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all"
-                  placeholder="John Doe"
+                  placeholder="John"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Surname *
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  data-testid="register-lastName"
+                  type="text"
+                  value={formData.lastName}
+                  onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all"
+                  placeholder="Doe"
                   required
                 />
               </div>
@@ -98,6 +128,7 @@ const Register = () => {
               <div className="relative">
                 <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
+                  data-testid="register-businessName"
                   type="text"
                   value={formData.businessName}
                   onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
@@ -114,6 +145,7 @@ const Register = () => {
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
+                  data-testid="register-email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -131,6 +163,7 @@ const Register = () => {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
+                  data-testid="register-password"
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -154,6 +187,7 @@ const Register = () => {
                 Confirm Password *
               </label>
               <input
+                data-testid="register-confirmPassword"
                 type={showPassword ? 'text' : 'password'}
                 value={formData.confirmPassword}
                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
@@ -164,6 +198,7 @@ const Register = () => {
             </div>
 
             <button
+              data-testid="register-submit"
               type="submit"
               disabled={loading}
               className="w-full bg-primary-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"

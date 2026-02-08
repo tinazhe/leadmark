@@ -15,6 +15,7 @@ import Leads from './pages/Leads';
 import LeadDetail from './pages/LeadDetail';
 import NewLead from './pages/NewLead';
 import Settings from './pages/Settings';
+import TeamInbox from './pages/TeamInbox';
 import Layout from './components/Layout';
 
 // Protected Route Component
@@ -104,6 +105,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<TodayDashboard />} />
+        <Route path="inbox" element={<TeamInbox />} />
         <Route path="leads" element={<Leads />} />
         <Route path="leads/new" element={<NewLead />} />
         <Route path="leads/:id" element={<LeadDetail />} />

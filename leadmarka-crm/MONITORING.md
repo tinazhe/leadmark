@@ -56,5 +56,6 @@ Notes:
 
 ## Logs
 
-- **Backend logs**: view via your host provider (Vercel / Render / Railway logs, etc.).\n+- **Redaction**: backend request logs redact common secret keys; avoid adding secrets to URLs or query params where possible.
+- **Backend logs**: view via your host provider (e.g. Vercel, Railway logs).
+- **Redaction**: backend request logs redact common secret keys; avoid adding secrets to URLs or query params where possible.
 

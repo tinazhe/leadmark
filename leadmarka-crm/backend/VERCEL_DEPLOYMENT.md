@@ -37,10 +37,10 @@ Click **Environment Variables** and add (for Production, and optionally Preview/
 | `SUPABASE_ANON_KEY` | Supabase anon key | Project Settings → API |
 | `JWT_SECRET` | Random string ≥32 characters | e.g. `openssl rand -base64 32` |
 | `RESEND_API_KEY` | Your Resend API key | Resend dashboard |
-| `FROM_EMAIL` | Verified sender email | e.g. `noreply@yourdomain.com` |
+| `FROM_EMAIL` | Verified sender email (Resend domain update.leadmarka.co.zw) | `info@update.leadmarka.co.zw` |
 | `FRONTEND_URL` | Your frontend URL | e.g. `https://your-app.vercel.app` |
 | `NODE_ENV` | `production` | |
-| `CRON_SECRET` | (Optional) Secret for `/api/cron/reminders` | Only if using [free cron](../CRON_FREE.md) instead of Render worker |
+| `CRON_SECRET` | Secret for `/api/cron/reminders` | Required for reminders; used by cron-job.org (see [CRON_FREE.md](../CRON_FREE.md)) |
 
 ---
 
@@ -72,15 +72,12 @@ In the **frontend** Vercel project (e.g. the one that serves `leadmark-ten.verce
 
 ---
 
-## 7. Reminder worker (required)
+## 7. Reminders via external cron (required)
 
-Vercel does not run long-lived crons. Use **Render** (or another host) for the reminder worker:
+Reminders are triggered by calling your API every minute. Set up an external cron (e.g. [cron-job.org](https://cron-job.org)) as in [CRON_FREE.md](../CRON_FREE.md):
 
-1. **Render** → New → **Background Worker**
-2. Connect the same repo, **Root directory**: `leadmarka-crm/backend`
-3. **Start command**: `npm run worker`
-4. Add the **same** environment variables as above.
-5. Deploy.
+1. Add **CRON_SECRET** in Vercel (Section 3 above) and redeploy.
+2. Create a cron job that GETs `https://<your-backend>.vercel.app/api/cron/reminders?secret=<your-CRON_SECRET>` every minute.
 
 ---
 
@@ -88,3 +85,15 @@ Vercel does not run long-lived crons. Use **Render** (or another host) for the r
 
 - **Health:** `GET https://<your-backend>.vercel.app/api/health` → `{"status":"ok",...}`
 - **Frontend:** Log in and use the app; check Network tab that requests go to your backend URL.
+
+---
+
+## Troubleshooting: FUNCTION_INVOCATION_FAILED (500)
+
+This error means the serverless function crashed or threw before sending a response. Common causes:
+
+1. **Missing env vars** – The handler catches load-time errors (e.g. missing `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`) and returns 503 with a message. If you see 503, add the required variables in Vercel → Settings → Environment Variables and redeploy.
+2. **Unhandled promise rejections** – Any `async` route or middleware that throws or rejects without being caught can crash the invocation. The entry point (`api/index.js`) now registers `process.on('unhandledRejection')` so rejections are logged (and sent to Sentry if configured) instead of crashing the process.
+3. **Handler returning before the response is sent** – The handler is now `async` and waits for the response to finish before returning, so the platform doesn’t tear down the function before Express sends the body.
+
+If you still see 500, check Vercel → Project → Logs (or Runtime Logs) for the stack trace and fix the underlying throw/rejection in your routes or middleware.

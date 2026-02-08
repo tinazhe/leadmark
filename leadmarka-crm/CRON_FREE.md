@@ -1,6 +1,6 @@
-# Reminders Without a Paid Worker (Free)
+# Reminders via external cron
 
-You can run follow-up reminders **without paying for Render** by calling your backend from a **free external cron** every minute.
+Reminders run by calling your backend from an **external cron service** every minute.
 
 ---
 

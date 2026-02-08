@@ -178,6 +178,117 @@ const buildEmailLayoutHtml = ({ preheader, title, subtitle, bodyHtml, ctaHtml, f
 </html>`;
 };
 
+const formatDateShort = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+};
+
+const formatMoney = (amount, currency) => {
+  const number = Number(amount);
+  if (!Number.isFinite(number)) return '';
+  const code = currency || 'USD';
+  return `${code} ${number.toFixed(2)}`;
+};
+
+const sendPaymentReceiptEmail = async ({
+  toEmail,
+  ownerName,
+  amount,
+  currency,
+  paynowReference,
+  reference,
+  periodEnd,
+}) => {
+  if (!toEmail) return null;
+
+  const formattedAmount = formatMoney(amount, currency);
+  const newEnd = formatDateShort(periodEnd);
+  const safeOwner = ownerName ? escapeHtml(ownerName) : 'there';
+
+  const bodyHtml = `
+    <p class="email-body" style="margin: 0 0 12px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+      Hi ${safeOwner}, your LeadMarka Pro payment was received successfully.
+    </p>
+    <div style="margin: 12px 0 0 0; padding: 12px; background: ${EMAIL_BRAND.bg}; border: 1px solid ${EMAIL_BRAND.border}; border-radius: 12px;">
+      <p class="email-body" style="margin: 0 0 6px 0; font-family: ${EMAIL_BRAND.font}; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+        Amount
+      </p>
+      <p class="email-body" style="margin: 0 0 12px 0; font-family: ${EMAIL_BRAND.font}; font-size: 16px; font-weight: 700; color: ${EMAIL_BRAND.dark};">
+        ${escapeHtml(formattedAmount)}
+      </p>
+      <p class="email-body" style="margin: 0 0 6px 0; font-family: ${EMAIL_BRAND.font}; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+        Payment method
+      </p>
+      <p class="email-body" style="margin: 0 0 12px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+        EcoCash via Paynow
+      </p>
+      <p class="email-body" style="margin: 0 0 6px 0; font-family: ${EMAIL_BRAND.font}; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+        Reference
+      </p>
+      <p class="email-body" style="margin: 0 0 12px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+        ${escapeHtml(reference || '')}
+      </p>
+      ${paynowReference ? `
+        <p class="email-body" style="margin: 0 0 6px 0; font-family: ${EMAIL_BRAND.font}; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          Paynow reference
+        </p>
+        <p class="email-body" style="margin: 0 0 12px 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+          ${escapeHtml(paynowReference)}
+        </p>
+      ` : ''}
+      ${newEnd ? `
+        <p class="email-body" style="margin: 0 0 6px 0; font-family: ${EMAIL_BRAND.font}; font-size: 13px; line-height: 18px; color: ${EMAIL_BRAND.muted};">
+          Next renewal
+        </p>
+        <p class="email-body" style="margin: 0; font-family: ${EMAIL_BRAND.font}; font-size: 14px; line-height: 20px; color: ${EMAIL_BRAND.dark};">
+          ${escapeHtml(newEnd)}
+        </p>
+      ` : ''}
+    </div>
+  `;
+
+  const frontendUrl = getFrontendBaseUrl();
+  const ctaHtml = frontendUrl
+    ? `<div style="margin-top: 16px;">${buildEmailButtonHtml({
+      href: frontendUrl,
+      label: 'Open LeadMarka',
+      backgroundColor: EMAIL_BRAND.orange,
+    })}</div>`
+    : '';
+
+  const html = buildEmailLayoutHtml({
+    preheader: 'LeadMarka Pro payment received',
+    title: 'Payment received',
+    subtitle: 'Your LeadMarka Pro subscription is active.',
+    bodyHtml,
+    ctaHtml,
+  });
+
+  const text = [
+    'Payment received',
+    '',
+    'Your LeadMarka Pro subscription is active.',
+    '',
+    `Amount: ${formattedAmount}`,
+    'Payment method: EcoCash via Paynow',
+    `Reference: ${reference || ''}`,
+    paynowReference ? `Paynow reference: ${paynowReference}` : null,
+    newEnd ? `Next renewal: ${newEnd}` : null,
+    frontendUrl ? `Open LeadMarka: ${frontendUrl}` : null,
+  ].filter(Boolean).join('\n');
+
+  const fromEmail = (process.env.FROM_EMAIL || '').replace(/\.+$/, '').trim();
+  return resend.emails.send({
+    from: fromEmail,
+    to: toEmail,
+    subject: 'LeadMarka Pro payment received',
+    html,
+    text,
+  });
+};
+
 const addDaysToDateString = (dateString, days) => {
   const base = new Date(`${dateString}T00:00:00Z`);
   base.setUTCDate(base.getUTCDate() + days);
@@ -853,9 +964,21 @@ const sendDailySummary = async () => {
 };
 
 // Run one cron cycle (reminders + daily summary). Used by external cron (e.g. cron-job.org).
+// Never throws: each step is wrapped so the HTTP handler can return 200 and the job stays enabled;
+// errors are logged for debugging in Vercel/server logs.
 const runCronCycle = async () => {
-  await checkAndSendReminders();
-  await sendDailySummary();
+  try {
+    await checkAndSendReminders();
+  } catch (err) {
+    console.error('[cron] checkAndSendReminders failed:', err?.message || err);
+    if (err?.stack) console.error(err.stack);
+  }
+  try {
+    await sendDailySummary();
+  } catch (err) {
+    console.error('[cron] sendDailySummary failed:', err?.message || err);
+    if (err?.stack) console.error(err.stack);
+  }
 };
 
 // Schedule reminder checker - runs every minute (used by long-running worker)
@@ -875,6 +998,7 @@ module.exports = {
   sendReminderEmail,
   sendLeadAssignedEmail,
   sendLeadReassignedAwayEmail,
+  sendPaymentReceiptEmail,
   buildEmailLayoutHtml,
   buildEmailButtonHtml,
 };

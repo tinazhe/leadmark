@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || '/api';
+// Defensive trim: environment variables can include trailing whitespace/newlines
+// (e.g. from copy/paste into hosting dashboards).
+const API_URL = (process.env.REACT_APP_API_URL || '/api').trim();
 
 const api = axios.create({
   baseURL: API_URL,
@@ -18,14 +20,25 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 responses
+// Handle 401 and 402 responses
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      const url = error.config?.url || '';
+      const isAuthRequest = /^\/?auth\/(login|register|forgot-password|reset-password)/.test(url);
+      if (!isAuthRequest) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    }
+    // Subscription expired — redirect to Settings so user can pay
+    if (error.response?.status === 402) {
+      const code = error.response?.data?.code;
+      if (code === 'SUBSCRIPTION_REQUIRED' && !window.location.pathname.startsWith('/settings')) {
+        window.location.href = '/settings?subscription=required';
+      }
     }
     return Promise.reject(error);
   }
@@ -65,7 +78,10 @@ const normalizeTime = (time) => {
 // Leads API
 export const leadsAPI = {
   getAll: (params) => api.get('/leads', { params }),
+  getInbox: (params) => api.get('/leads/inbox', { params }),
   getById: (id) => api.get(`/leads/${id}`),
+  getViewers: (id) => api.get(`/leads/${id}/viewers`),
+  postViewing: (id) => api.post(`/leads/${id}/viewing`),
   create: (data) => api.post('/leads', {
     ...data,
     status: normalizeStatus(data?.status),
@@ -77,6 +93,7 @@ export const leadsAPI = {
     }
     return api.put(`/leads/${id}`, payload);
   },
+  assign: (id, assignedUserId) => api.patch(`/leads/${id}/assign`, { assignedUserId }),
   markWhatsappContactNow: (id) => api.patch(`/leads/${id}/whatsapp-contact`),
   delete: (id) => api.delete(`/leads/${id}`),
 };
@@ -110,6 +127,28 @@ export const notesAPI = {
 export const dashboardAPI = {
   getToday: () => api.get('/dashboard/today'),
   getStats: () => api.get('/dashboard/stats'),
+};
+
+// Workspace API
+export const workspaceAPI = {
+  getMe: () => api.get('/workspace/me'),
+  getMembers: () => api.get('/workspace/members'),
+  invite: (email) => api.post('/workspace/invite', { email }),
+  getInvites: () => api.get('/workspace/invites'),
+  removeMember: (userId) => api.delete(`/workspace/members/${userId}`),
+  updateSettings: (data) => api.put('/workspace/settings', data),
+};
+
+// Activity API
+export const activityAPI = {
+  getByLead: (leadId) => api.get(`/activity/lead/${leadId}`),
+};
+
+// Billing API
+export const billingAPI = {
+  getMe: () => api.get('/billing/me'),
+  startEcocash: (data) => api.post('/billing/paynow/ecocash', data),
+  getTransaction: (reference) => api.get(`/billing/transactions/${reference}`),
 };
 
 export default api;

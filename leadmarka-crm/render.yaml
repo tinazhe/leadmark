@@ -1,9 +1,0 @@
-services:
-  - type: worker
-    name: leadmarka-reminder-worker
-    env: node
-    rootDir: leadmarka-crm/backend
-    buildCommand: npm ci
-    startCommand: npm run worker
-    autoDeploy: true
-

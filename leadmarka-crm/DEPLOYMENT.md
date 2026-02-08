@@ -17,7 +17,7 @@ See [MONITORING.md](MONITORING.md) for a minimal setup (uptime monitoring + erro
 1. Node.js 18+ installed
 2. Supabase account
 3. Resend account (for email notifications)
-4. Hosting platform (Vercel, Render, Railway, etc.)
+4. Hosting platform (e.g. Vercel, Railway)
 
 ## Setup Instructions
 
@@ -45,7 +45,7 @@ SUPABASE_SERVICE_KEY=your_supabase_service_role_key
 SUPABASE_ANON_KEY=your_supabase_anon_key
 JWT_SECRET=your_random_jwt_secret_min_32_chars
 RESEND_API_KEY=your_resend_api_key
-FROM_EMAIL=noreply@yourdomain.com
+FROM_EMAIL=info@update.leadmarka.co.zw
 PORT=3001
 NODE_ENV=production
 FRONTEND_URL=https://your-frontend-url.com
@@ -58,10 +58,7 @@ npm start
 npm run dev
 ```
 
-Start the reminder worker in a separate process:
-```bash
-npm run worker
-```
+For **production** reminders, use an external cron that calls your API every minute (see [Reminders in production](#reminders-in-production) and [CRON_FREE.md](CRON_FREE.md)). For **local** development you can run the reminder worker in a separate terminal: `npm run worker`.
 
 ### 3. Frontend Setup
 
@@ -92,53 +89,22 @@ npm run build
 
 ## Deployment Options
 
-### Option A: Vercel (Frontend) + Render (Backend)
+### Option A: Vercel (Frontend + Backend API)
 
-**Backend (Render):**
-1. Push code to GitHub
-2. Create new Web Service on Render
-3. Connect your repo
-4. Set root directory to `backend`
-5. Build Command: `npm install`
-6. Start Command: `npm start`
-7. Add environment variables from `.env`
-8. Create a separate Background Worker service:
-   - Root directory: `backend`
-   - Build Command: `npm install`
-   - Start Command: `npm run worker`
+Deploy the backend API and frontend as separate Vercel projects. Reminders run via an external cron calling your API every minute—see [Reminders in production](#reminders-in-production) and [CRON_FREE.md](CRON_FREE.md). See also [backend/VERCEL_DEPLOYMENT.md](backend/VERCEL_DEPLOYMENT.md) for step-by-step backend setup.
 
 **Frontend (Vercel):**
-1. Import project from GitHub
-2. Set root directory to `frontend`
-3. Framework Preset: Create React App
-4. Build Command: `npm run build`
-5. Output Directory: `build`
-6. Add `REACT_APP_API_URL` environment variable
+1. Import project from GitHub; set root directory to `frontend`
+2. Framework Preset: Create React App; Build Command: `npm run build`; Output Directory: `build`
+3. Add `REACT_APP_API_URL` pointing to your backend API URL (e.g. `https://<your-backend>.vercel.app/api`)
 
 **Marketing site (optional, separate Vercel project):**  
 See [MARKETING_DEPLOYMENT.md](MARKETING_DEPLOYMENT.md) to deploy the static landing site from `leadmarka-crm/marketing` as its own Vercel project (or Netlify / GitHub Pages).
 
-### Option A2: Vercel (Backend API) + Render (Worker)
+### Reminders in production
 
-If you deploy the API to Vercel, you still need a separate long-running process for reminders because Vercel Serverless Functions are not always-on workers.
+Reminders (follow-up emails and daily summaries) are triggered by calling the backend every minute. Use an external cron service (e.g. [cron-job.org](https://cron-job.org)) to GET your cron endpoint. Full setup: [CRON_FREE.md](CRON_FREE.md). Required: set `CRON_SECRET` in your backend environment and configure the cron job with that secret (query param `secret` or `Authorization: Bearer <CRON_SECRET>`).
 
-**Worker (Render Background Worker):**
-1. Push code to GitHub
-2. Create a new Render **Blueprint** using `render.yaml` (or create a Background Worker manually)
-3. Ensure the worker root directory is `backend`
-4. Build Command: `npm ci`
-5. Start Command: `npm run worker`
-6. Add the same backend environment variables (see Backend `.env` table below), especially:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_KEY`
-   - `SUPABASE_ANON_KEY`
-   - `RESEND_API_KEY`
-   - `FROM_EMAIL`
-   - `FRONTEND_URL`
-   - `JWT_SECRET`
-   - `NODE_ENV=production`
-
-**Note on duplicates:** For high reliability, keep the `notification_claimed_at` column/migration applied so multiple worker instances don’t send duplicate emails.
 
 ### Option B: Railway (Full Stack)
 
@@ -176,17 +142,27 @@ npm run build
 
 ### Backend (.env)
 
-| Variable | Description |
-|----------|-------------|
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | Supabase service role key |
-| `SUPABASE_ANON_KEY` | Supabase anon key |
-| `JWT_SECRET` | Random string for JWT signing (min 32 chars) |
-| `RESEND_API_KEY` | Resend API key for emails |
-| `FROM_EMAIL` | Sender email address |
-| `FRONTEND_URL` | Frontend app URL |
-| `PORT` | Server port (default: 3001) |
-| `NODE_ENV` | production or development |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SUPABASE_URL` | Supabase project URL | |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key | |
+| `SUPABASE_ANON_KEY` | Supabase anon key | |
+| `JWT_SECRET` | Random string for JWT signing (min 32 chars) | |
+| `RESEND_API_KEY` | Resend API key for emails | |
+| `FROM_EMAIL` | Sender email address | `info@update.leadmarka.co.zw` |
+| `FRONTEND_URL` | Frontend app URL | |
+| `CRON_SECRET` | Secret for `/api/cron/reminders` (required when using external cron; see [CRON_FREE.md](CRON_FREE.md)) | |
+| `PORT` | Server port (default: 3001) | |
+| `NODE_ENV` | production or development | |
+| **Paynow (Billing)** | **Required for subscription payments** | |
+| `PAYNOW_MODE` | Payment mode: `live` or `test` | `live` |
+| `PAYNOW_INTEGRATION_ID` | Paynow merchant integration ID | `12345` |
+| `PAYNOW_INTEGRATION_KEY` | Paynow merchant integration key | |
+| `PAYNOW_RESULT_URL_BASE` | Backend URL for webhook callbacks (required in production) | `https://api.leadmarka.co.zw` |
+| `PAYNOW_RETURN_URL_BASE` | Frontend URL for user redirects (optional, defaults to FRONTEND_URL) | `https://app.leadmarka.co.zw` |
+| `PAYNOW_TEST_AUTH_EMAIL` | Email for test transactions (required when PAYNOW_MODE=test) | `test@example.com` |
+
+> **Note:** See [PAYNOW_PRODUCTION_GUIDE.md](PAYNOW_PRODUCTION_GUIDE.md) for detailed Paynow setup instructions.
 
 ### Frontend (.env)
 
@@ -204,8 +180,7 @@ npm run build
 
 ## Important Notes
 
-- Reminder service checks every minute for due follow-ups
-- The reminder worker must run on a platform that supports always-on background processes (not Vercel)
+- Reminder service checks every minute for due follow-ups (triggered by external cron calling your API; see [CRON_FREE.md](CRON_FREE.md))
 - Phone numbers must include country code (e.g., +263)
 - Email notifications require valid Resend API key and verified domain
 - All data is isolated per user account

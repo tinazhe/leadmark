@@ -112,7 +112,7 @@ JWT_SECRET=your-random-secret-32-chars-min      # For signing tokens
 
 # Email (optional, from https://resend.com)
 RESEND_API_KEY=re_...                           # For email notifications
-FROM_EMAIL=noreply@yourdomain.com              # Sender address
+FROM_EMAIL=info@update.leadmarka.co.zw      # Sender address
 
 # App Config
 PORT=3001                                       # Backend port

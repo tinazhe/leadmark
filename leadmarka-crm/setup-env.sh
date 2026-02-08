@@ -47,10 +47,10 @@ read -p "Enter Resend API Key (or press Enter to skip): " RESEND_API_KEY
 
 if [ -z "$RESEND_API_KEY" ]; then
     RESEND_API_KEY="your-resend-api-key"
-    FROM_EMAIL="noreply@example.com"
+    FROM_EMAIL="info@update.leadmarka.co.zw"
 else
     echo ""
-    read -p "Enter From Email (e.g., noreply@yourdomain.com): " FROM_EMAIL
+    read -p "Enter From Email (e.g., info@update.leadmarka.co.zw): " FROM_EMAIL
 fi
 
 echo ""
