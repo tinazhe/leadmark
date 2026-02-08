@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageCircle, CheckCircle, AlertCircle, Clock, ChevronRight } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardAPI, followUpsAPI } from '../services/api';
+import { differenceInMinutes, differenceInHours, parseISO } from 'date-fns';
 
 const TodayDashboard = () => {
   const queryClient = useQueryClient();
+  const overdueRefs = useRef({});
 
   const {
     data,
@@ -28,6 +30,30 @@ const TodayDashboard = () => {
   const leadCount = Number.isFinite(data?.leadCount) ? data.leadCount : 0;
 
   const error = isError ? 'Failed to load dashboard' : null;
+
+  // Helper function to format relative overdue time
+  const formatOverdueTime = (scheduledTimeStr) => {
+    const scheduled = parseISO(scheduledTimeStr);
+    const now = new Date();
+    const minutesDiff = differenceInMinutes(now, scheduled);
+    const hoursDiff = differenceInHours(now, scheduled);
+
+    if (minutesDiff < 60) {
+      return `${minutesDiff}min`;
+    } else if (hoursDiff < 24) {
+      return `${hoursDiff}h`;
+    } else {
+      const days = Math.floor(hoursDiff / 24);
+      return `${days}d`;
+    }
+  };
+
+  const scrollToOverdue = (followUpId) => {
+    const element = overdueRefs.current[followUpId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
 
   const completeMutation = useMutation({
     mutationFn: (followUpId) => followUpsAPI.complete(followUpId),
@@ -92,11 +118,40 @@ const TodayDashboard = () => {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Next Best Action Strip */}
+      {followUps.overdue.length > 0 && (
+        <div
+          onClick={() => scrollToOverdue(followUps.overdue[0].id)}
+          className="bg-gradient-to-r from-danger-500 to-danger-600 rounded-lg p-4 text-white cursor-pointer hover:from-danger-600 hover:to-danger-700 transition-all next-action-pulse"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-xs font-semibold uppercase tracking-wide">Next Best Action</span>
+          </div>
+          <p className="text-lg font-bold">
+            Reply to {followUps.overdue[0].leadName}
+          </p>
+          <p className="text-danger-100 text-sm mt-0.5">
+            Overdue by {formatOverdueTime(followUps.overdue[0].scheduledTime)}
+          </p>
+        </div>
+      )}
+
       {/* Summary Card */}
-      <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-lg p-4 text-white">
+      <div
+        onClick={() => stats.overdueCount > 0 && followUps.overdue[0] && scrollToOverdue(followUps.overdue[0].id)}
+        className={`bg-gradient-to-r from-primary-500 to-primary-600 rounded-lg p-4 text-white ${stats.overdueCount > 0 ? 'cursor-pointer hover:from-primary-600 hover:to-primary-700 transition-all' : ''
+          }`}
+      >
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-primary-100 text-sm">Follow-ups Today</p>
+            <p className="text-primary-100 text-sm">
+              {stats.totalActionRequired === 0
+                ? 'No follow-ups due today'
+                : stats.totalActionRequired === 1
+                  ? '1 follow-up due today'
+                  : `${stats.totalActionRequired} follow-ups due today`}
+            </p>
             <p className="text-3xl font-bold">{stats.totalActionRequired}</p>
           </div>
           <div className="bg-white/20 rounded-full p-3">
@@ -107,7 +162,7 @@ const TodayDashboard = () => {
           <div className="mt-3 flex items-center gap-2 bg-danger-500/30 rounded-lg px-3 py-2">
             <AlertCircle className="w-4 h-4" />
             <span className="text-sm font-medium">
-              {stats.overdueCount} overdue - needs attention
+              {stats.overdueCount} overdue — act now
             </span>
           </div>
         )}
@@ -156,6 +211,8 @@ const TodayDashboard = () => {
                 followUp={followUp}
                 isOverdue
                 onComplete={() => handleComplete(followUp.id)}
+                formatOverdueTime={formatOverdueTime}
+                ref={(el) => (overdueRefs.current[followUp.id] = el)}
               />
             ))}
           </div>
@@ -184,11 +241,13 @@ const TodayDashboard = () => {
   );
 };
 
-const FollowUpCard = ({ followUp, isOverdue, onComplete }) => {
+const FollowUpCard = React.forwardRef(({ followUp, isOverdue, onComplete, formatOverdueTime }, ref) => {
   return (
-    <div className={`bg-white rounded-lg p-4 border ${
-      isOverdue ? 'border-danger-200 shadow-sm' : 'border-gray-200'
-    }`}>
+    <div
+      ref={ref}
+      className={`rounded-lg p-4 border ${isOverdue ? 'overdue-card shadow-sm' : 'bg-white border-gray-200'
+        }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
@@ -196,12 +255,12 @@ const FollowUpCard = ({ followUp, isOverdue, onComplete }) => {
               {followUp.leadName}
             </h3>
             {isOverdue && (
-              <span className="bg-danger-100 text-danger-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                Overdue
+              <span className="bg-danger-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                Overdue by {formatOverdueTime(followUp.scheduledTime)}
               </span>
             )}
           </div>
-          
+
           <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
@@ -211,7 +270,7 @@ const FollowUpCard = ({ followUp, isOverdue, onComplete }) => {
               {followUp.leadStatus}
             </span>
           </div>
-          
+
           {followUp.note && (
             <p className="text-sm text-gray-600 mb-3 bg-gray-50 rounded p-2">
               {followUp.note}
@@ -225,20 +284,20 @@ const FollowUpCard = ({ followUp, isOverdue, onComplete }) => {
           href={followUp.whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-2 bg-whatsapp-500 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-whatsapp-600 active:bg-whatsapp-700 transition-colors whatsapp-btn"
+          className="flex-1 flex items-center justify-center gap-2 bg-whatsapp-500 text-white py-3 px-4 rounded-lg font-semibold hover:bg-whatsapp-600 active:bg-whatsapp-700 transition-all shadow-sm whatsapp-btn"
         >
-          <MessageCircle className="w-4 h-4" />
+          <MessageCircle className="w-5 h-5" />
           Chat
         </a>
-        
+
         <button
           onClick={onComplete}
-          className="flex items-center justify-center gap-2 bg-success-500 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-success-600 active:bg-success-700 transition-colors"
+          className="flex items-center justify-center gap-2 border border-gray-300 bg-white text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors"
         >
           <CheckCircle className="w-4 h-4" />
-          Done
+          Mark Done
         </button>
-        
+
         <Link
           to={`/leads/${followUp.leadId}`}
           className="flex items-center justify-center p-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition-colors"
@@ -248,6 +307,6 @@ const FollowUpCard = ({ followUp, isOverdue, onComplete }) => {
       </div>
     </div>
   );
-};
+});
 
 export default TodayDashboard;
