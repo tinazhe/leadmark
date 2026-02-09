@@ -33,11 +33,11 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
-    // Subscription expired — redirect to Settings so user can pay
+    // Subscription expired — redirect to Billing so user can pay
     if (error.response?.status === 402) {
       const code = error.response?.data?.code;
       if (code === 'SUBSCRIPTION_REQUIRED' && !window.location.pathname.startsWith('/settings')) {
-        window.location.href = '/settings?subscription=required';
+        window.location.href = '/settings/billing?subscription=required';
       }
     }
     return Promise.reject(error);

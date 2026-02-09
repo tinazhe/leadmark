@@ -17,7 +17,15 @@ const TodayDashboard = () => {
     queryKey: ['dashboard', 'today'],
     queryFn: async () => {
       const { data } = await dashboardAPI.getToday();
-      return data;
+      const formatItem = (item) => ({
+        ...item,
+        scheduledTime: item.date && item.time ? `${item.date}T${item.time}` : null,
+      });
+      return {
+        ...data,
+        today: (data.today || []).map(formatItem),
+        overdue: (data.overdue || []).map(formatItem),
+      };
     },
   });
 
@@ -33,18 +41,27 @@ const TodayDashboard = () => {
 
   // Helper function to format relative overdue time
   const formatOverdueTime = (scheduledTimeStr) => {
+    if (!scheduledTimeStr) return 'due';
+
+    // Check if we have a valid date string
     const scheduled = parseISO(scheduledTimeStr);
+    if (isNaN(scheduled.getTime())) return 'due';
+
     const now = new Date();
+    // differenceInMinutes returns positive if first date is after second
     const minutesDiff = differenceInMinutes(now, scheduled);
     const hoursDiff = differenceInHours(now, scheduled);
 
+    // If scheduled time is in the future (not overdue), return empty or custom text
+    if (minutesDiff < 0) return 'soon';
+
     if (minutesDiff < 60) {
-      return `${minutesDiff}min`;
+      return `${Math.max(1, minutesDiff)}m`;
     } else if (hoursDiff < 24) {
-      return `${hoursDiff}h`;
+      return `${Math.max(1, hoursDiff)}h`;
     } else {
       const days = Math.floor(hoursDiff / 24);
-      return `${days}d`;
+      return `${Math.max(1, days)}d`;
     }
   };
 

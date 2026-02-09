@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Calendar, Users, Settings, Plus, LogOut, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { getSettingsTitle } from '../pages/settings/settingsData';
 
 const Layout = () => {
   const { user, logout } = useAuth();
@@ -31,6 +32,9 @@ const Layout = () => {
     return location.pathname.startsWith(path);
   };
 
+  const isSettingsRoute = location.pathname.startsWith('/settings');
+  const containerWidth = isSettingsRoute ? 'max-w-5xl' : 'max-w-lg';
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -43,16 +47,17 @@ const Layout = () => {
     if (location.pathname === '/leads/new') return 'New Lead';
     if (location.pathname.startsWith('/leads/')) return 'Lead Details';
     if (location.pathname === '/settings') return 'Settings';
+    if (location.pathname.startsWith('/settings/')) return getSettingsTitle(location.pathname);
     return 'LeadMarka';
   };
 
-  const showBackButton = location.pathname !== '/' && location.pathname !== '/leads' && location.pathname !== '/inbox';
+  const showBackButton = !['/', '/leads', '/inbox', '/settings'].includes(location.pathname);
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
+        <div className={`${containerWidth} mx-auto px-4 h-14 flex items-center justify-between`}>
           <div className="flex items-center gap-2">
             {showBackButton ? (
               <button
@@ -98,13 +103,13 @@ const Layout = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-lg mx-auto">
+      <main className={`${containerWidth} mx-auto w-full`}>
         <Outlet />
       </main>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
-        <div className="max-w-lg mx-auto flex items-center justify-around h-16">
+        <div className={`${containerWidth} mx-auto flex items-center justify-around h-16`}>
           <Link
             to="/"
             className={`flex flex-col items-center justify-center flex-1 h-full ${
